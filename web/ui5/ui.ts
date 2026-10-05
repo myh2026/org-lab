@@ -872,6 +872,7 @@ var TOOLS = [
   { id: "spawns", name: "派生池", sub: "spawn/pool.json 观测面 —— 子智能体树与统计（含挂孙）", run: "spawnsPanel" },
   { id: "review", name: "审查人推荐", sub: "recommendReviewers —— 按改动文件推荐审查人", run: "reviewPanel" },
   { id: "tracker", name: "工单台账", sub: "issueList —— GitHub issue 只读列取（token 已配）", run: "trackerPanel" },
+  { id: "providers", name: "车道与服务", sub: "providerRows/lanes —— 车道表 + 连通测试 + env 发现", run: "providersPanel" },
 ];
 function renderTools() {
   var el = $("lstTools"); el.innerHTML = "";
@@ -1241,6 +1242,53 @@ function debugPanel() {
       $("dbgOut").innerHTML = h;
     }).catch(function (e) { err(String(e)); });
   };
+}
+function providersPanel() {
+  $("dwBody").innerHTML = '<button class="mini" id="pvGo">▶ 刷新车道面</button><div id="pvOut" style="margin-top:10px"></div>';
+  function err(e) { $("pvOut").innerHTML = '<div class="dw-meta">失败：' + esc(e) + '</div>'; }
+  function render(j) {
+    var lanes = j.lanes || {};
+    var names = Object.keys(lanes);
+    var h = '<div class="dw-meta">缺省车道 <b>' + esc(j.default_lane || "—") + '</b> · 配置车道 ' + names.length +
+      " · 注册表 " + ((j.presets || []).length) + " 家 · env 发现 " + ((j.env || []).length) + '</div>';
+    if (j.budget) {
+      h += '<div class="dw-meta">预算水位 ' + esc(String(j.budget.used != null ? j.budget.used : JSON.stringify(j.budget)).slice(0, 90)) + '</div>';
+    }
+    names.forEach(function (n) {
+      var l = lanes[n] || {};
+      h += '<div class="hit">' + (n === j.default_lane ? "→ " : "  ") + '<b>' + esc(n) + '</b>' +
+        " · " + esc(l.provider || "?") + (l.model ? "/" + esc(String(l.model).slice(0, 26)) : "") +
+        (l.keys ? " · keys " + l.keys : " · ⚠ 无 key") +
+        (l.gateway ? ' · <span class="dw-meta" style="display:inline">' + esc(String(l.gateway).split("://").pop().slice(0, 40)) + '</span>' : "") +
+        ' <button class="mini" data-lane="' + esc(n) + '" style="margin-left:6px">测试</button></div>';
+    });
+    if (!names.length) h += '<div class="dw-meta">（无配置车道 —— org config set lane …）</div>';
+    if ((j.env || []).length) {
+      h += '<div class="dw-meta">env 键发现：' + (j.env || []).map(function (e) { return esc(e.provider) + "（" + esc(e.envName) + "）"; }).join(" · ") + '</div>';
+    }
+    $("pvOut").innerHTML = h;
+    var btns = $("pvOut").querySelectorAll("button[data-lane]");
+    for (var i = 0; i < btns.length; i++) {
+      btns[i].onclick = function () {
+        var lane = this.getAttribute("data-lane");
+        var self = this;
+        self.textContent = "…";
+        api("/api/providers/test", { lane: lane }).then(function (r) {
+          var res = (r && r.result) || {};
+          self.textContent = r && r.ok ? "✓ " + (res.ms != null ? res.ms + "ms" : "ok") : "✗ " + String(res.error || res.kind || "fail").slice(0, 40);
+          self.style.color = r && r.ok ? "var(--ok)" : "var(--err)";
+        }).catch(function () { self.textContent = "✗ 网络"; self.style.color = "var(--err)"; });
+      };
+    }
+  }
+  $("pvGo").onclick = function () {
+    $("pvOut").innerHTML = '<div class="dw-meta">读取中…</div>';
+    api("/api/providers").then(function (j) {
+      if (!j || j.ok === false) { err((j && j.error) || "?"); return; }
+      render(j);
+    }).catch(function (e) { err(String(e)); });
+  };
+  $("pvGo").onclick();
 }
 function cloudPanel() {
   $("dwBody").innerHTML = '<button class="mini" id="cloudGo">▶ 探测云工具链</button><div id="cloudOut" style="margin-top:10px"></div>';
