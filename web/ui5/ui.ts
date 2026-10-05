@@ -174,6 +174,9 @@ button.mini:hover { color:var(--tx); background:var(--bg3); }
   color:var(--tx); font:var(--fs-sm) var(--mono); }
 .dw-form button { border:1px solid var(--ln2); border-radius:var(--r2); padding:6px 14px; color:var(--tx); }
 .dw-form button:hover { background:var(--bg3); }
+.dw-pre { white-space:pre-wrap; word-break:break-all; font:var(--fs-sm)/1.55 var(--mono); color:var(--tx2);
+  background:var(--bg2); border:1px solid var(--ln); border-radius:var(--r2); padding:8px 10px;
+  max-height:52vh; overflow:auto; margin:0; }
 .sitem .stools { float:right; margin-left:4px; }
 .sitem .stools button { padding:0 5px; border-radius:var(--r1); color:var(--tx3); font-size:10px; background:none; border:none; cursor:pointer; }
 .sitem .stools button:hover { color:var(--err); background:var(--bg3); }
@@ -852,6 +855,8 @@ var TOOLS = [
   { id: "symbols", name: "符号索引", sub: "indexSymbols/lookupDef —— 按名查找定义与引用", run: "symbolsPanel" },
   { id: "sbom", name: "软件物料清单", sub: "buildSbom —— SPDX-2.3 组件清单（只读）", run: "sbomPanel" },
   { id: "db", name: "DB 探针", sub: "dbSchema/db-query —— SQLite 表结构与只读查询", run: "dbPanel" },
+  { id: "diff", name: "Diff 查看", sub: "diffFiles —— 工作区双文件差异（只读）", run: "diffPanel" },
+  { id: "pdf", name: "PDF 阅读", sub: "readPdf —— PDF 文本提取（三层降级链）", run: "pdfPanel" },
 ];
 function renderTools() {
   var el = $("lstTools"); el.innerHTML = "";
@@ -865,7 +870,7 @@ function renderTools() {
   });
   var note = document.createElement("div");
   note.className = "dw-meta";
-  note.textContent = "更多面板（MCP / Diff / PDF / 治理与扩展…）S2 续批迁移";
+  note.textContent = "更多面板（MCP / 治理与扩展面板…）S2 续批迁移";
   el.appendChild(note);
 }
 function openDrawer(title) {
@@ -974,6 +979,45 @@ function dbPanel() {
       $("dbOut").innerHTML = h;
     }).catch(function (e) { err(String(e)); });
   };
+}
+function diffPanel() {
+  $("dwBody").innerHTML = '<div class="dw-form"><input id="dfA" placeholder="文件 A（工作区相对路径）" autocomplete="off"><input id="dfB" placeholder="文件 B" autocomplete="off"><button id="dfGo">对比</button></div><div id="dfOut"></div>';
+  function err(e) { $("dfOut").innerHTML = '<div class="dw-meta">失败：' + esc(e) + '</div>'; }
+  $("dfGo").onclick = function () {
+    var a = $("dfA").value.trim(), b = $("dfB").value.trim();
+    if (!a || !b) { err("a/b 两个路径都要填"); return; }
+    $("dfOut").innerHTML = '<div class="dw-meta">对比中…</div>';
+    api("/api/toolbox/diff", { a: a, b: b }).then(function (j) {
+      if (!j || j.ok === false) { err(((j && j.kind) ? '[' + j.kind + '] ' : '') + ((j && j.error) || "?")); return; }
+      if (j.identical) { $("dfOut").innerHTML = '<div class="dw-meta">两文件一致（无差异）✓</div>'; return; }
+      var h = '<div class="dw-meta">+' + (j.adds || 0) + ' −' + (j.dels || 0) +
+        (j.truncated ? ' · 截断' : '') + (j.stats ? ' · ' + esc(j.stats) : '') + '</div>';
+      h += '<pre class="dw-pre">' + esc(String(j.unified || '').slice(0, 60000)) + '</pre>';
+      $("dfOut").innerHTML = h;
+    }).catch(function (e) { err(String(e)); });
+  };
+  $("dfA").focus();
+}
+function pdfPanel() {
+  $("dwBody").innerHTML = '<div class="dw-form"><input id="pdfFile" placeholder="工作区相对路径（如 docs/spec.pdf）" autocomplete="off"><input id="pdfPages" placeholder="页帽" style="max-width:90px" autocomplete="off"><button id="pdfGo">读取</button></div><div id="pdfOut"></div>';
+  function err(e) { $("pdfOut").innerHTML = '<div class="dw-meta">失败：' + esc(e) + '</div>'; }
+  $("pdfGo").onclick = function () {
+    var f = $("pdfFile").value.trim();
+    if (!f) { err("先输入 PDF 路径"); return; }
+    var mp = parseInt($("pdfPages").value, 10);
+    $("pdfOut").innerHTML = '<div class="dw-meta">提取中…（pdftotext → uv-pypdf → 诚实失败）</div>';
+    api("/api/toolbox/pdfread", { file: f, maxPages: isNaN(mp) ? undefined : mp }).then(function (j) {
+      if (!j || j.ok === false) {
+        err(((j && j.error) || "?") + ((j && j.hint) ? '（' + j.hint + '）' : ''));
+        return;
+      }
+      var meta = (j.engine || '?') + ' · ' + (j.pages || 0) + ' 页 · ' + String(j.text || '').length + ' 字符' +
+        (j.ms != null ? ' · ' + j.ms + 'ms' : '') + (j.hint ? ' · ' + j.hint : '');
+      $("pdfOut").innerHTML = '<div class="dw-meta">' + esc(meta) + '</div><pre class="dw-pre">' +
+        esc(String(j.text || '').slice(0, 60000)) + '</pre>';
+    }).catch(function (e) { err(String(e)); });
+  };
+  $("pdfFile").focus();
 }
 
 /* ---- 数据装载 ---- */
