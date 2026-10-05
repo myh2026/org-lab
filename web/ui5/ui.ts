@@ -871,6 +871,7 @@ var TOOLS = [
   { id: "retest", name: "重测台账", sub: "retestPlan/flakySummary —— 选择性重跑计划 + flaky 观测", run: "retestPanel" },
   { id: "spawns", name: "派生池", sub: "spawn/pool.json 观测面 —— 子智能体树与统计（含挂孙）", run: "spawnsPanel" },
   { id: "review", name: "审查人推荐", sub: "recommendReviewers —— 按改动文件推荐审查人", run: "reviewPanel" },
+  { id: "tracker", name: "工单台账", sub: "issueList —— GitHub issue 只读列取（token 已配）", run: "trackerPanel" },
 ];
 function renderTools() {
   var el = $("lstTools"); el.innerHTML = "";
@@ -884,7 +885,7 @@ function renderTools() {
   });
   var note = document.createElement("div");
   note.className = "dw-meta";
-  note.textContent = "更多面板（治理与扩展面板族…）S2 续批迁移";
+  note.textContent = "更多面板（collab / vision / voice…）S2 续批迁移";
   el.appendChild(note);
 }
 function openDrawer(title) {
@@ -1358,6 +1359,50 @@ function reviewPanel() {
       });
       if (!(j.reviewers || []).length) h += '<div class="dw-meta">（无推荐）</div>';
       $("revOut").innerHTML = h;
+    }).catch(function (e) { err(String(e)); });
+  };
+}
+function trackerPanel() {
+  $("dwBody").innerHTML = '<div class="dw-form"><input id="tkRepo" placeholder="仓库 owner/name（空 = 工作区 git 远程）" autocomplete="off">' +
+    '<select id="tkState" class="chip" style="flex:none"><option value="open">open</option><option value="closed">closed</option><option value="all">all</option></select>' +
+    '<button id="tkGo">列取</button></div><div id="tkOut"></div>';
+  function err(e, guidance) {
+    $("tkOut").innerHTML = '<div class="dw-meta">失败：' + esc(e) + '</div>' +
+      (guidance ? '<div class="dw-meta">' + esc(String(guidance).slice(0, 200)) + '</div>' : "");
+  }
+  $("tkGo").onclick = function () {
+    var repo = $("tkRepo").value.trim();
+    var st = $("tkState").value;
+    $("tkOut").innerHTML = '<div class="dw-meta">列取中…（GitHub REST）</div>';
+    api("/api/govex/tracker?action=list" + (repo ? "&repo=" + encodeURIComponent(repo) : "") + "&state=" + st).then(function (j) {
+      if (!j || j.ok === false) { err((j && j.error) || "?", j && j.guidance); return; }
+      var h = '<div class="dw-meta">' + esc(j.repo) + " · " + esc(j.state || st) + " · " + (j.count || 0) + " 条 · " + esc(j.token || "") + '</div>';
+      (j.issues || []).forEach(function (it) {
+        var labels = (it.labels || []).map(function (l) { return l && l.name ? l.name : l; }).filter(Boolean).join(", ");
+        h += '<div class="hit" data-num="' + (it.number || "") + '">#' + (it.number || "?") + ' <b>' + esc(String(it.title || "").slice(0, 76)) + '</b>' +
+          ' · ' + esc(it.state || "") + (labels ? ' · <span class="dw-meta" style="display:inline">' + esc(labels) + '</span>' : "") + '</div>';
+      });
+      if (!(j.issues || []).length) h += '<div class="dw-meta">（无工单）</div>';
+      $("tkOut").innerHTML = h;
+      var rows = $("tkOut").querySelectorAll(".hit[data-num]");
+      for (var i = 0; i < rows.length; i++) {
+        rows[i].style.cursor = "pointer";
+        rows[i].onclick = (function (num) {
+          return function () {
+            var repo2 = $("tkRepo").value.trim();
+            api("/api/govex/tracker?action=get&number=" + num + (repo2 ? "&repo=" + encodeURIComponent(repo2) : "")).then(function (g) {
+              if (!g || g.ok === false) { return; }
+              var it2 = g.issue || g.data || {};
+              var d = '<div class="dw-meta">#' + (it2.number || num) + " · " + esc(it2.state || "") + (it2.comments != null ? " · 评论 " + it2.comments : "") + '</div>';
+              d += '<div class="hit"><b>' + esc(String(it2.title || "")) + '</b></div>';
+              if (it2.body) { d += '<pre class="dw-pre">' + esc(String(it2.body).slice(0, 1200)) + '</pre>'; }
+              var box = document.createElement("div");
+              box.innerHTML = d;
+              $("tkOut").appendChild(box);
+            });
+          };
+        })(Number(rows[i].getAttribute("data-num")) || 0);
+      }
     }).catch(function (e) { err(String(e)); });
   };
 }
