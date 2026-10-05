@@ -850,6 +850,8 @@ function showAbout() {
 var TOOLS = [
   { id: "scan", name: "密钥扫描", sub: "scanSecrets —— 工作区敏感信息扫描（只读）", run: "scanPanel" },
   { id: "symbols", name: "符号索引", sub: "indexSymbols/lookupDef —— 按名查找定义与引用", run: "symbolsPanel" },
+  { id: "sbom", name: "软件物料清单", sub: "buildSbom —— SPDX-2.3 组件清单（只读）", run: "sbomPanel" },
+  { id: "db", name: "DB 探针", sub: "dbSchema/db-query —— SQLite 表结构与只读查询", run: "dbPanel" },
 ];
 function renderTools() {
   var el = $("lstTools"); el.innerHTML = "";
@@ -863,7 +865,7 @@ function renderTools() {
   });
   var note = document.createElement("div");
   note.className = "dw-meta";
-  note.textContent = "更多面板（SBOM / DB / MCP / Diff / PDF…）S2 续批迁移";
+  note.textContent = "更多面板（MCP / Diff / PDF / 治理与扩展…）S2 续批迁移";
   el.appendChild(note);
 }
 function openDrawer(title) {
@@ -921,6 +923,57 @@ function symbolsPanel() {
   $("symGo").onclick = go;
   $("symIn").addEventListener("keydown", function (e) { if (e.key === "Enter") go(); });
   $("symIn").focus();
+}
+function sbomPanel() {
+  $("dwBody").innerHTML = '<div class="dw-meta">加载中…</div>';
+  api("/api/toolbox/sbom").then(function (j) {
+    if (!j || j.ok === false) { $("dwBody").innerHTML = '<div class="dw-meta">失败：' + esc((j && j.error) || "?") + "</div>"; return; }
+    var pk = j.packages || [];
+    var h = '<div class="dw-meta">SPDX-2.3 · ' + pk.length + " 组件</div>";
+    pk.forEach(function (x) {
+      h += '<div class="hit">' + esc(x.scope || "") + " · <b>" + esc(x.name) + "</b>@" + esc(x.version) +
+        " · " + esc(x.license || "NOASSERTION") + "</div>";
+    });
+    if (!pk.length) h += '<div class="dw-meta">（无组件）</div>';
+    $("dwBody").innerHTML = h;
+  }).catch(function (e) { $("dwBody").innerHTML = '<div class="dw-meta">失败：' + esc(String(e)) + "</div>"; });
+}
+function dbPanel() {
+  $("dwBody").innerHTML = '<div class="dw-form"><input id="dbFile" placeholder="工作区内的 .db 路径（如 data/app.db）" autocomplete="off"><button id="dbSchemaGo">表结构</button></div>' +
+    '<div class="dw-form"><input id="dbSql" placeholder="只读 SQL（SELECT …）" autocomplete="off"><button id="dbQueryGo">查询</button></div>' +
+    '<div id="dbOut"></div>';
+  function err(e) { $("dbOut").innerHTML = '<div class="dw-meta">失败：' + esc(e) + "</div>"; }
+  $("dbSchemaGo").onclick = function () {
+    var f = $("dbFile").value.trim();
+    if (!f) { err("先输入 .db 路径"); return; }
+    $("dbOut").innerHTML = '<div class="dw-meta">加载中…</div>';
+    api("/api/toolbox/db?file=" + encodeURIComponent(f)).then(function (j) {
+      if (!j || j.ok === false) { err((j && j.error) || "?"); return; }
+      var h = "";
+      (j.tables || []).forEach(function (t) {
+        h += '<div class="hit"><b>' + esc(t.name) + "</b> · " +
+          (t.rowCount == null ? "行数未抽查" : t.rowCount + " 行") + "<br><span class=\\"dw-meta\\">" +
+          (t.columns || []).map(function (c) { return esc(c.name); }).join(" · ") + "</span></div>";
+      });
+      if ((j.indexes || []).length) h += '<div class="dw-meta">索引：' + esc(j.indexes.join(" · ")) + "</div>";
+      if ((j.views || []).length) h += '<div class="dw-meta">视图：' + esc(j.views.join(" · ")) + "</div>";
+      $("dbOut").innerHTML = h || '<div class="dw-meta">（库为空：无表）</div>';
+    }).catch(function (e) { err(String(e)); });
+  };
+  $("dbQueryGo").onclick = function () {
+    var f = $("dbFile").value.trim(), sql = $("dbSql").value.trim();
+    if (!f || !sql) { err("file 与 SQL 都要填"); return; }
+    $("dbOut").innerHTML = '<div class="dw-meta">查询中…</div>';
+    api("/api/toolbox/db-query", { file: f, sql: sql }).then(function (j) {
+      if (!j || j.ok === false) { err("[" + ((j && j.kind) || "?") + "] " + ((j && j.error) || "?")); return; }
+      var h = '<div class="dw-meta">' + j.row_count + " 行 · " + j.ms + "ms" + (j.truncated ? "（截断）" : "") + "</div>";
+      if ((j.columns || []).length) h += '<div class="hit"><b>' + j.columns.map(function (c) { return esc(c); }).join(" | ") + "</b></div>";
+      (j.rows || []).forEach(function (row) {
+        h += '<div class="hit">' + row.map(function (c) { return esc(c === null ? "NULL" : c); }).join(" | ") + "</div>";
+      });
+      $("dbOut").innerHTML = h;
+    }).catch(function (e) { err(String(e)); });
+  };
 }
 
 /* ---- 数据装载 ---- */

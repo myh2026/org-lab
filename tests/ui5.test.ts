@@ -29,11 +29,17 @@ describe("UI v5 骨架冒烟（ORG_WEB_UI=v5 轨）", () => {
       "function renderSessions", "function renameSession", "function deleteSession",
       "function refreshApprovals", "function renderSb", "function replayRun",
       "function renderTools", "function openDrawer", "function closeDrawer",
-      "function scanPanel", "function symbolsPanel",
+      "function scanPanel", "function symbolsPanel", "function sbomPanel", "function dbPanel",
     ];
     const miss = fns.filter((k) => !page.includes(k));
     if (miss.length) console.error("缺失函数:", miss.join(", "));
     expect(miss.length).toBe(0);
+  });
+
+  test("客户端脚本可解析（防模板转义截断 · 2026-10-05 双反斜杠事故锁）", () => {
+    const m = page.match(/<script>([\s\S]*)<\/script>/);
+    expect(m).not.toBeNull();
+    expect(() => new Function(m![1])).not.toThrow();
   });
 
   test("模板体量 sanity（曾蒸发/截断事故 → 下限防御）", () => {
