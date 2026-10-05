@@ -879,6 +879,8 @@ var TOOLS = [
   { id: "tracker", name: "工单台账", sub: "issueList —— GitHub issue 只读列取（token 已配）", run: "trackerPanel" },
   { id: "providers", name: "车道与服务", sub: "providerRows/lanes —— 车道表 + 连通测试 + env 发现", run: "providersPanel" },
   { id: "audio", name: "音频工坊", sub: "audioCompose —— 确定性作曲（零模型调用 → 可播放）", run: "audioPanel" },
+  { id: "search", name: "语义检索", sub: "semanticSearch —— 工作区语义检索（hits/score/摘要）", run: "searchPanel" },
+  { id: "memory", name: "专家记忆", sub: "allMemories —— 运行时记忆库（按专家分组）", run: "memoryPanel" },
 ];
 function renderTools() {
   var el = $("lstTools"); el.innerHTML = "";
@@ -1336,6 +1338,57 @@ function audioPanel() {
       });
       (j.degrade || []).forEach(function (d) { h += '<div class="dw-meta">降级：' + esc(String(d)) + '</div>'; });
       $("adOut").innerHTML = h;
+    }).catch(function (e) { err(String(e)); });
+  };
+}
+function searchPanel() {
+  $("dwBody").innerHTML = '<div class="dw-form"><input id="sqIn" placeholder="检索词（中文 bigram 友好）" autocomplete="off">' +
+    '<input id="sqK" placeholder="k" style="max-width:60px" value="5" autocomplete="off">' +
+    '<button id="sqGo">检索</button></div><div id="sqOut"></div>';
+  function err(e) { $("sqOut").innerHTML = '<div class="dw-meta">失败：' + esc(e) + '</div>'; }
+  function go() {
+    var q = $("sqIn").value.trim();
+    if (!q) { err("先输入检索词"); return; }
+    $("sqOut").innerHTML = '<div class="dw-meta">检索中…</div>';
+    api("/api/search?q=" + encodeURIComponent(q) + "&k=" + (Number($("sqK").value) || 5)).then(function (j) {
+      if (!j || j.ok === false) { err((j && j.error) || "?"); return; }
+      var h = '<div class="dw-meta">' + (j.took_ms || 0) + "ms · 索引 " + (j.total_docs || 0) + " 文档 · 命中 " +
+        ((j.hits || []).length) + '</div>';
+      (j.hits || []).forEach(function (x) {
+        h += '<div class="hit"><b>' + (x.score != null ? Number(x.score).toFixed(2) : "?") + '</b> · <span class="f">' +
+          esc(x.path || "?") + '</span> · ' + esc((x.terms || []).join(",")) +
+          (x.snippet ? '<br><span class="dw-meta">' + esc(String(x.snippet).slice(0, 170)) + '</span>' : "") + '</div>';
+      });
+      if (!(j.hits || []).length) h += '<div class="dw-meta">无命中</div>';
+      $("sqOut").innerHTML = h;
+    }).catch(function (e) { err(String(e)); });
+  }
+  $("sqGo").onclick = go;
+  $("sqIn").addEventListener("keydown", function (e) { if (e.key === "Enter") go(); });
+  $("sqIn").focus();
+}
+function memoryPanel() {
+  $("dwBody").innerHTML = '<button class="mini" id="mmGo">▶ 加载记忆库</button><div id="mmOut" style="margin-top:10px"></div>';
+  function err(e) { $("mmOut").innerHTML = '<div class="dw-meta">失败：' + esc(e) + '</div>'; }
+  $("mmGo").onclick = function () {
+    $("mmOut").innerHTML = '<div class="dw-meta">加载中…</div>';
+    api("/api/memory").then(function (j) {
+      if (!j || j.ok === false) { err((j && j.error) || "?"); return; }
+      var gs = j.groups || [];
+      var total = 0;
+      gs.forEach(function (g) { total += (g.entries || []).length; });
+      var h = '<div class="dw-meta">' + gs.length + " 位专家 · " + total + " 条记忆</div>";
+      gs.forEach(function (g) {
+        h += '<div class="dw-meta">🧠 <b>' + esc(g.expert) + "</b> · " + ((g.entries || []).length) + " 条</div>";
+        (g.entries || []).forEach(function (e2) {
+          var ts = e2.ts || e2.date || e2.time || "";
+          var txt = e2.text || e2.content || e2.note || e2.title || JSON.stringify(e2);
+          h += '<div class="hit">' + (ts ? '<span class="dw-meta">' + esc(String(ts).slice(0, 22)) + "</span> " : "") +
+            esc(String(txt).slice(0, 200)) + '</div>';
+        });
+      });
+      if (!gs.length) h += '<div class="dw-meta">（记忆库为空 —— 专家记忆在运行时写入 runtime/memories/）</div>';
+      $("mmOut").innerHTML = h;
     }).catch(function (e) { err(String(e)); });
   };
 }
