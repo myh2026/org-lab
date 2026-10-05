@@ -859,6 +859,7 @@ var TOOLS = [
   { id: "diff", name: "Diff 查看", sub: "diffFiles —— 工作区双文件差异（只读）", run: "diffPanel" },
   { id: "pdf", name: "PDF 阅读", sub: "readPdf —— PDF 文本提取（三层降级链）", run: "pdfPanel" },
   { id: "mcp", name: "MCP 桥", sub: "服务档案 / 工具 / 资源 / 提示词 / 自检（只读面）", run: "mcpPanel" },
+  { id: "sast", name: "SAST 扫描", sub: "scanSast —— 多引擎静态安全扫描（ruff→bandit→内置）", run: "sastPanel" },
 ];
 function renderTools() {
   var el = $("lstTools"); el.innerHTML = "";
@@ -992,8 +993,8 @@ function diffPanel() {
     api("/api/toolbox/diff", { a: a, b: b }).then(function (j) {
       if (!j || j.ok === false) { err(((j && j.kind) ? '[' + j.kind + '] ' : '') + ((j && j.error) || "?")); return; }
       if (j.identical) { $("dfOut").innerHTML = '<div class="dw-meta">两文件一致（无差异）✓</div>'; return; }
-      var h = '<div class="dw-meta">+' + (j.adds || 0) + ' −' + (j.dels || 0) +
-        (j.truncated ? ' · 截断' : '') + (j.stats ? ' · ' + esc(j.stats) : '') + '</div>';
+      var h = '<div class="dw-meta">' + (j.stats ? esc(j.stats) : ('+' + (j.adds || 0) + ' −' + (j.dels || 0))) +
+        (j.truncated ? ' · 截断' : '') + '</div>';
       h += '<pre class="dw-pre">' + esc(String(j.unified || '').slice(0, 60000)) + '</pre>';
       $("dfOut").innerHTML = h;
     }).catch(function (e) { err(String(e)); });
@@ -1084,6 +1085,45 @@ function mcpPanel() {
     if (a) go(a);
   });
   go("servers");
+}
+function sastPanel() {
+  $("dwBody").innerHTML = '<div class="dw-form"><input id="sastTargets" placeholder="目标（逗号分隔，可空 = 全扫描）" autocomplete="off"><button id="sastGo">扫描</button></div><div id="sastOut"></div>';
+  function err(e) { $("sastOut").innerHTML = '<div class="dw-meta">失败：' + esc(e) + '</div>'; }
+  $("sastGo").onclick = function () {
+    var tg = $("sastTargets").value.trim();
+    $("sastOut").innerHTML = '<div class="dw-meta">扫描中…（ruff → bandit → 内置规则 降级链）</div>';
+    api("/api/govex/sast" + (tg ? "?targets=" + encodeURIComponent(tg) : "")).then(function (j) {
+      if (!j || j.ok === false) { err((j && j.error) || "?"); return; }
+      var h = '<div class="dw-meta">' + (j.scanned || 0) + "/" + (j.files || 0) + " 文件 · " +
+        (j.total_findings != null ? j.total_findings : (j.findings || []).length) + " 命中 · " +
+        (j.took_ms || 0) + "ms · " + (j.rules || 0) + " 条规则" + (j.truncated ? "（截断）" : "") + '</div>';
+      (j.findings || []).forEach(function (f) {
+        var sev = String(f.severity || f.level || "").toLowerCase();
+        var cls = (sev === "high" || sev === "error" || sev === "critical") ? "err" : "warn";
+        h += '<div class="hit"><span class="sev-' + cls + '">●</span> <span class="f">' + esc(f.file || f.path || "?") +
+          (f.line != null ? ":" + f.line : "") + '</span> · ' + esc(f.rule || f.rule_id || f.kind || "") +
+          " · " + esc(String(f.message || f.text || "").slice(0, 110)) + '</div>';
+      });
+      if (!(j.findings || []).length) h += '<div class="dw-meta">未发现问题 ✓</div>';
+      if (j.engines) {
+        var lanes = "";
+        if (Array.isArray(j.lanes)) {
+          lanes = j.lanes.map(function (l) {
+            return typeof l === "string" ? l : (l.name || l.engine || l.id || "?") + (l.available === false ? "（缺席）" : "");
+          }).join(" · ");
+        } else if (j.lanes && typeof j.lanes === "object") {
+          lanes = Object.keys(j.lanes).map(function (k) {
+            var v = j.lanes[k];
+            return k + ":" + (v === false || v == null ? "✗" : String(v));
+          }).join(" · ");
+        } else if (j.lanes) { lanes = String(j.lanes); }
+        h += '<div class="dw-meta">引擎：ruff ' + (j.engines.ruff ? "✓" : "⬜") +
+          " · bandit " + (j.engines.bandit ? "✓" : "⬜") + " · semgrep " + (j.engines.semgrep ? "✓" : "⬜") +
+          (lanes ? " · 车道 " + esc(lanes.slice(0, 70)) : "") + '</div>';
+      }
+      $("sastOut").innerHTML = h;
+    }).catch(function (e) { err(String(e)); });
+  };
 }
 
 /* ---- 数据装载 ---- */
