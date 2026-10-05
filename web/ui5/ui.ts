@@ -868,6 +868,7 @@ var TOOLS = [
   { id: "deps", name: "依赖探测", sub: "probeDepsTools/parseDepsManifest —— 七工具 + 清单摘要", run: "depsPanel" },
   { id: "debug", name: "堆栈分析", sub: "analyzeStackTrace —— 粘贴崩溃文本 → 帧与根因提示", run: "debugPanel" },
   { id: "cloud", name: "云工具链", sub: "cloudProbeAll —— docker / ssh / k8s / terraform 探测", run: "cloudPanel" },
+  { id: "retest", name: "重测台账", sub: "retestPlan/flakySummary —— 选择性重跑计划 + flaky 观测", run: "retestPanel" },
 ];
 function renderTools() {
   var el = $("lstTools"); el.innerHTML = "";
@@ -1270,6 +1271,48 @@ function cloudPanel() {
       $("cloudOut").innerHTML = h;
     }).catch(function (e) { err(String(e)); });
   };
+}
+function retestPanel() {
+  $("dwBody").innerHTML = '<div class="dw-form" id="rtTabs">' +
+    '<button data-a="plan" class="on">重跑计划</button><button data-a="flaky">flaky 台账</button></div>' +
+    '<div id="rtOut"></div>';
+  var out = $("rtOut");
+  function go(a) {
+    var tabs = document.querySelectorAll("#rtTabs button");
+    for (var i = 0; i < tabs.length; i++) { tabs[i].className = tabs[i].getAttribute("data-a") === a ? "on" : ""; }
+    out.innerHTML = '<div class="dw-meta">加载中…</div>';
+    api("/api/govex/retest?action=" + a).then(function (j) {
+      if (!j || j.ok === false) {
+        var extra = (j && j.kind === "empty") ? "（发现测试文件 " + (j.discovered || 0) + " 个）" : "";
+        out.innerHTML = '<div class="dw-meta">' + esc(((j && j.error) || "?") + extra) + '</div>';
+        return;
+      }
+      var h = "";
+      if (a === "plan") {
+        var fs = Array.isArray(j.files) ? j.files.length : (j.files || 0);
+        h += '<div class="dw-meta">文件 ' + fs + " · 名称模式 " + esc(j.name_pattern || "—") +
+          " · flaky 命中 " + (j.flaky_count || 0) + '</div>';
+        if (j.command) { h += '<pre class="dw-pre">' + esc(String(j.command)) + '</pre>'; }
+        (j.failed_names || []).forEach(function (n) { h += '<div class="hit">↻ ' + esc(String(n)) + '</div>'; });
+        if (j.note) { h += '<div class="dw-meta">' + esc(String(j.note)) + '</div>'; }
+      } else {
+        h += '<div class="dw-meta">运行 ' + (j.runs || 0) + " · 异常 " + (j.bad || 0) + " · flaky " + (j.flaky_count || 0) +
+          " · 发现测试文件 " + (j.discovered || 0) + '</div>';
+        (j.entries || []).forEach(function (e) {
+          h += '<div class="hit">' + (e.flaky ? "⚡" : "·") + " <b>" + esc(e.name || e.key || "?") + '</b> · ' +
+            esc(e.file || "") + " · 跑 " + (e.runs || 0) + " 败 " + (e.fails || 0) +
+            (Array.isArray(e.history) && e.history.length ? ' · 史 [' + e.history.map(String).join("") + ']' : "") + '</div>';
+        });
+        if (!(j.entries || []).length) h += '<div class="dw-meta">台账为空（暂无重跑记录）</div>';
+      }
+      out.innerHTML = h;
+    }).catch(function (e) { out.innerHTML = '<div class="dw-meta">失败：' + esc(String(e)) + '</div>'; });
+  }
+  $("rtTabs").addEventListener("click", function (ev) {
+    var a = ev.target && ev.target.getAttribute ? ev.target.getAttribute("data-a") : null;
+    if (a) go(a);
+  });
+  go("plan");
 }
 
 /* ---- 数据装载 ---- */
