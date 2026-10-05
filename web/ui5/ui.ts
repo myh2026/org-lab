@@ -860,6 +860,8 @@ var TOOLS = [
   { id: "pdf", name: "PDF 阅读", sub: "readPdf —— PDF 文本提取（三层降级链）", run: "pdfPanel" },
   { id: "mcp", name: "MCP 桥", sub: "服务档案 / 工具 / 资源 / 提示词 / 自检（只读面）", run: "mcpPanel" },
   { id: "sast", name: "SAST 扫描", sub: "scanSast —— 多引擎静态安全扫描（ruff→bandit→内置）", run: "sastPanel" },
+  { id: "iac", name: "IaC 扫描", sub: "scanIac —— 基础设施即代码检查（HCL/YAML…）", run: "iacPanel" },
+  { id: "git", name: "Git 状态", sub: "gitMergeState —— 分支 / 领先落后 / 工作树（只读）", run: "gitPanel" },
 ];
 function renderTools() {
   var el = $("lstTools"); el.innerHTML = "";
@@ -1124,6 +1126,47 @@ function sastPanel() {
       $("sastOut").innerHTML = h;
     }).catch(function (e) { err(String(e)); });
   };
+}
+function iacPanel() {
+  $("dwBody").innerHTML = '<button class="mini" id="iacGo">▶ 扫描 IaC</button><div id="iacOut" style="margin-top:10px"></div>';
+  function err(e) { $("iacOut").innerHTML = '<div class="dw-meta">失败：' + esc(e) + '</div>'; }
+  $("iacGo").onclick = function () {
+    $("iacOut").innerHTML = '<div class="dw-meta">扫描中…（IaC 规则链）</div>';
+    api("/api/govex/iacscan").then(function (j) {
+      if (!j || j.ok === false) { err((j && j.error) || "?"); return; }
+      var h = '<div class="dw-meta">' + (j.scanned || 0) + "/" + (j.files || 0) + " 文件 · " + ((j.hits || []).length) + " 命中" +
+        (j.high != null ? "（high " + j.high + "）" : "") + " · " + (j.took_ms || 0) + "ms · " + (j.rules || 0) + " 条规则" +
+        (j.truncated ? "（截断）" : "") + '</div>';
+      (j.hits || []).forEach(function (x) {
+        var cls = String(x.severity) === "high" ? "err" : "warn";
+        h += '<div class="hit"><span class="sev-' + cls + '">●</span> <span class="f">' + esc(x.file || "?") +
+          (x.line != null ? ":" + x.line : "") + '</span> · ' + esc(x.rule || x.id || "") +
+          " · " + esc(String(x.message || x.text || "").slice(0, 110)) + '</div>';
+      });
+      if (!(j.hits || []).length) h += '<div class="dw-meta">未发现问题 ✓</div>';
+      $("iacOut").innerHTML = h;
+    }).catch(function (e) { err(String(e)); });
+  };
+}
+function gitPanel() {
+  $("dwBody").innerHTML = '<button class="mini" id="gitGo">▶ 刷新状态</button><div id="gitOut" style="margin-top:10px"></div>';
+  function err(e) { $("gitOut").innerHTML = '<div class="dw-meta">失败：' + esc(e) + '</div>'; }
+  function load() {
+    $("gitOut").innerHTML = '<div class="dw-meta">读取中…</div>';
+    api("/api/govex/gitstate").then(function (j) {
+      var st = (j && j.state) || {};
+      if (st.degraded) { $("gitOut").innerHTML = '<div class="dw-meta">⚠ ' + esc(String(st.degraded)) + '</div>'; return; }
+      if (!j || j.ok === false) { err((j && j.error) || "?"); return; }
+      var h = '<div class="dw-meta">' + esc(st.repo || "") + '</div>';
+      h += '<div class="hit">分支 <b>' + esc(st.branch || "?") + '</b>' + (st.upstream ? " · 上游 " + esc(st.upstream) : "") + '</div>';
+      h += '<div class="hit">ahead ' + (st.ahead || 0) + " · behind " + (st.behind || 0) +
+        (st.diverged ? " · ⚠ 分叉" : "") + " · " + (st.dirty ? "⚑ 有未提交改动" : "干净") +
+        " · stash " + (st.stashed || 0) + '</div>';
+      $("gitOut").innerHTML = h;
+    }).catch(function (e) { err(String(e)); });
+  }
+  $("gitGo").onclick = load;
+  load();
 }
 
 /* ---- 数据装载 ---- */
