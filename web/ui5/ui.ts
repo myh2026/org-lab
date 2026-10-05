@@ -174,6 +174,7 @@ button.mini:hover { color:var(--tx); background:var(--bg3); }
   color:var(--tx); font:var(--fs-sm) var(--mono); }
 .dw-form button { border:1px solid var(--ln2); border-radius:var(--r2); padding:6px 14px; color:var(--tx); }
 .dw-form button:hover { background:var(--bg3); }
+.dw-form button.on { background:var(--bg3); color:var(--tx); border-color:var(--ln2); }
 .dw-pre { white-space:pre-wrap; word-break:break-all; font:var(--fs-sm)/1.55 var(--mono); color:var(--tx2);
   background:var(--bg2); border:1px solid var(--ln); border-radius:var(--r2); padding:8px 10px;
   max-height:52vh; overflow:auto; margin:0; }
@@ -857,6 +858,7 @@ var TOOLS = [
   { id: "db", name: "DB 探针", sub: "dbSchema/db-query —— SQLite 表结构与只读查询", run: "dbPanel" },
   { id: "diff", name: "Diff 查看", sub: "diffFiles —— 工作区双文件差异（只读）", run: "diffPanel" },
   { id: "pdf", name: "PDF 阅读", sub: "readPdf —— PDF 文本提取（三层降级链）", run: "pdfPanel" },
+  { id: "mcp", name: "MCP 桥", sub: "服务档案 / 工具 / 资源 / 提示词 / 自检（只读面）", run: "mcpPanel" },
 ];
 function renderTools() {
   var el = $("lstTools"); el.innerHTML = "";
@@ -870,7 +872,7 @@ function renderTools() {
   });
   var note = document.createElement("div");
   note.className = "dw-meta";
-  note.textContent = "更多面板（MCP / 治理与扩展面板…）S2 续批迁移";
+  note.textContent = "更多面板（治理与扩展面板族…）S2 续批迁移";
   el.appendChild(note);
 }
 function openDrawer(title) {
@@ -1018,6 +1020,70 @@ function pdfPanel() {
     }).catch(function (e) { err(String(e)); });
   };
   $("pdfFile").focus();
+}
+function mcpPanel() {
+  $("dwBody").innerHTML = '<div class="dw-form" id="mcpTabs">' +
+    '<button data-a="servers" class="on">服务档案</button><button data-a="tools">工具清单</button>' +
+    '<button data-a="resources">资源</button><button data-a="prompts">提示词</button>' +
+    '<button data-a="selftest">自检</button></div><div id="mcpOut"></div>';
+  var out = $("mcpOut");
+  function go(a) {
+    var tabs = document.querySelectorAll("#mcpTabs button");
+    for (var i = 0; i < tabs.length; i++) {
+      tabs[i].className = tabs[i].getAttribute("data-a") === a ? "on" : "";
+    }
+    out.innerHTML = '<div class="dw-meta">加载中…</div>';
+    api("/api/govex/mcp?action=" + a).then(function (j) {
+      if (!j || j.ok === false) { out.innerHTML = '<div class="dw-meta">失败：' + esc((j && j.error) || "?") + '</div>'; return; }
+      var h = "";
+      if (a === "servers") {
+        h += '<div class="dw-meta">档案 ' + esc(j.kind || "?") + " · " + ((j.entries || []).length) + " 条目</div>";
+        (j.entries || []).forEach(function (e) {
+          h += '<div class="hit"><b>' + esc(e.name) + '</b>' + (e.disabled ? "（停用）" : "") + " · " +
+            esc(e.command) + " " + esc((e.args || []).join(" ")) + '</div>';
+        });
+        if (!(j.entries || []).length) {
+          h += '<div class="dw-meta">' + esc(j.guidance ? String(j.guidance).slice(0, 220) : "（无 MCP 服务档案）") + '</div>';
+        }
+        var rt = j.runtimes || [];
+        if (rt.length) h += '<div class="dw-meta">宿主：' + rt.map(function (r) { return esc(r.name) + (r.available ? " ✓" : " ⬜"); }).join(" · ") + '</div>';
+      } else if (a === "tools") {
+        (j.servers || []).forEach(function (x) {
+          h += '<div class="dw-meta">' + esc(x.server) + " · " + (x.ok ? ((x.tools || []).length + " 工具") : "不可用") +
+            (x.reason ? " · " + esc(String(x.reason).slice(0, 80)) : "") + '</div>';
+          (x.tools || []).forEach(function (t) {
+            h += '<div class="hit"><b>' + esc(t.name) + '</b> · ' + esc(String(t.description || "").slice(0, 110)) + '</div>';
+          });
+        });
+        if (!(j.servers || []).length) h += '<div class="dw-meta">（无服务）</div>';
+      } else if (a === "resources") {
+        (j.servers || []).forEach(function (x) {
+          h += '<div class="dw-meta">' + esc(x.server) + " · " + ((x.resources || []).length) + " 资源" +
+            (x.reason ? " · " + esc(String(x.reason).slice(0, 80)) : "") + '</div>';
+          (x.resources || []).forEach(function (rr) {
+            h += '<div class="hit"><span class="f">' + esc(rr.uri) + '</span> · ' + esc(rr.name || "") +
+              (rr.mimeType ? " · " + esc(rr.mimeType) : "") + '</div>';
+          });
+        });
+      } else if (a === "prompts") {
+        (j.prompts || []).forEach(function (pp) {
+          h += '<div class="hit">' + esc(pp.server) + " · <b>" + esc(pp.name) + '</b> · ' + esc(String(pp.description || "").slice(0, 110)) + '</div>';
+        });
+        if (!(j.prompts || []).length) h += '<div class="dw-meta">（无提示词）</div>';
+      } else if (a === "selftest") {
+        h += '<div class="dw-meta">自检 ' + (j.passed || 0) + "/" + (j.total || 0) + (j.ok ? " ✓" : " ✗") + '</div>';
+        (j.checks || []).forEach(function (c) {
+          h += '<div class="hit">' + esc(typeof c === "string" ? c : ((c.name || "check") + " " + (c.ok ? "✓" : "✗"))) + '</div>';
+        });
+      }
+      out.innerHTML = h;
+    }).catch(function (e) { out.innerHTML = '<div class="dw-meta">失败：' + esc(String(e)) + '</div>'; });
+  }
+  $("mcpTabs").addEventListener("click", function (ev) {
+    var a = ev.target && ev.target.getAttribute ? ev.target.getAttribute("data-a") : null;
+    if (a) go(a);
+  });
+  go("servers");
 }
 
 /* ---- 数据装载 ---- */
