@@ -869,6 +869,8 @@ var TOOLS = [
   { id: "debug", name: "堆栈分析", sub: "analyzeStackTrace —— 粘贴崩溃文本 → 帧与根因提示", run: "debugPanel" },
   { id: "cloud", name: "云工具链", sub: "cloudProbeAll —— docker / ssh / k8s / terraform 探测", run: "cloudPanel" },
   { id: "retest", name: "重测台账", sub: "retestPlan/flakySummary —— 选择性重跑计划 + flaky 观测", run: "retestPanel" },
+  { id: "spawns", name: "派生池", sub: "spawn/pool.json 观测面 —— 子智能体树与统计（含挂孙）", run: "spawnsPanel" },
+  { id: "review", name: "审查人推荐", sub: "recommendReviewers —— 按改动文件推荐审查人", run: "reviewPanel" },
 ];
 function renderTools() {
   var el = $("lstTools"); el.innerHTML = "";
@@ -1313,6 +1315,51 @@ function retestPanel() {
     if (a) go(a);
   });
   go("plan");
+}
+function spawnsPanel() {
+  $("dwBody").innerHTML = '<button class="mini" id="spawnGo">▶ 刷新派生池</button><div id="spawnOut" style="margin-top:10px"></div>';
+  function err(e) { $("spawnOut").innerHTML = '<div class="dw-meta">失败：' + esc(e) + '</div>'; }
+  function rec(r, depth) {
+    var pad = "";
+    for (var i = 0; i < depth; i++) { pad += "　"; }
+    var h = '<div class="hit">' + pad + (r.ok === false ? "✗" : "⛓") + " <b>" + esc(r.id || r.name || "?") + '</b>' +
+      (r.reuse_count ? " · 复用 " + r.reuse_count : "") +
+      (r.usage && r.usage.tokens ? " · tok " + r.usage.tokens : "") +
+      (r.status ? " · " + esc(String(r.status)) : "") + '</div>';
+    (r.children || []).forEach(function (c) { h += rec(c, depth + 1); });
+    return h;
+  }
+  $("spawnGo").onclick = function () {
+    $("spawnOut").innerHTML = '<div class="dw-meta">读取中…</div>';
+    api("/api/spawns").then(function (j) {
+      if (!j || j.ok === false) { err((j && j.error) || "?"); return; }
+      var st = j.stats || {};
+      var h = '<div class="dw-meta">共 ' + (st.total || 0) + " · ok " + (st.ok || 0) + " · 败 " + (st.failed || 0) +
+        " · 复用命中 " + (st.reuse_hits || 0) + " · tokens " + (st.tokens_total || 0) + '</div>';
+      (j.records || []).forEach(function (r) { h += rec(r, 0); });
+      if (!(j.records || []).length) h += '<div class="dw-meta">派生池为空（agent_spawn 尚未使用）</div>';
+      $("spawnOut").innerHTML = h;
+    }).catch(function (e) { err(String(e)); });
+  };
+}
+function reviewPanel() {
+  $("dwBody").innerHTML = '<div class="dw-form"><input id="revFiles" placeholder="文件列表（逗号分隔，如 lib/engine.ts, cli/org.ts）" autocomplete="off"><button id="revGo">分析</button></div><div id="revOut"></div>';
+  function err(e) { $("revOut").innerHTML = '<div class="dw-meta">失败：' + esc(e) + '</div>'; }
+  $("revGo").onclick = function () {
+    var files = $("revFiles").value.split(",").map(function (x) { return x.trim(); }).filter(Boolean);
+    if (!files.length) { err("先输入至少一个文件路径"); return; }
+    $("revOut").innerHTML = '<div class="dw-meta">分析中…</div>';
+    api("/api/toolbox/review", { files: files }).then(function (j) {
+      if (!j || j.ok === false) { err((j && j.error) || "?"); return; }
+      var h = '<div class="dw-meta">' + (j.from_codeowners ? "CODEOWNERS：" + esc(j.codeowners || "?") : "目录启发式（无 CODEOWNERS）") + '</div>';
+      (j.reviewers || []).forEach(function (rv) {
+        h += '<div class="hit">@' + esc(rv.name || "?") + " · 覆盖 " + (rv.files_covered != null ? rv.files_covered : "?") +
+          (rv.reason ? " · " + esc(String(rv.reason).slice(0, 90)) : "") + '</div>';
+      });
+      if (!(j.reviewers || []).length) h += '<div class="dw-meta">（无推荐）</div>';
+      $("revOut").innerHTML = h;
+    }).catch(function (e) { err(String(e)); });
+  };
 }
 
 /* ---- 数据装载 ---- */
