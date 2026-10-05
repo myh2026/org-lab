@@ -1,7 +1,7 @@
 {
-  "ts": "2026-10-05T04:12:59.395Z",
+  "ts": "2026-10-05T05:25:15.642Z",
   "ok": true,
-  "elapsed_ms": 36,
+  "elapsed_ms": 34,
   "model": "scripted",
   "task": "(direct) multi-turn",
   "events": 10
