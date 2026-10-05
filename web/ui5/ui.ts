@@ -148,6 +148,32 @@ input,textarea,select { font-family:var(--sans); color:var(--tx); background:non
 button.mini { font:var(--fs-xs) var(--mono); color:var(--tx3); border:1px solid var(--ln2);
   border-radius:99px; padding:1px 8px; cursor:pointer; background:none; }
 button.mini:hover { color:var(--tx); background:var(--bg3); }
+/* v5 · S2：工具箱面板（drawer + tool cards + hit rows） */
+#drawer { position:fixed; top:0; right:0; bottom:28px; width:clamp(360px,46vw,760px);
+  background:var(--bg1); border-left:1px solid var(--ln2); z-index:40; display:flex; flex-direction:column;
+  box-shadow:var(--sh); }
+#drawer[hidden] { display:none; }
+.dw-head { display:flex; align-items:center; gap:var(--sp2); padding:10px 14px; border-bottom:1px solid var(--ln);
+  font:600 var(--fs-sm) var(--sans); color:var(--tx); }
+.dw-head .grow { flex:1; }
+#dwClose { color:var(--tx3); font-size:var(--fs-base); padding:2px 8px; border-radius:var(--r1); }
+#dwClose:hover { color:var(--tx); background:var(--bg3); }
+#dwBody { flex:1; overflow-y:auto; padding:12px 14px; min-height:0; }
+.tool { display:block; width:100%; text-align:left; padding:8px 10px; border:1px solid var(--ln); border-radius:var(--r2);
+  margin-bottom:6px; color:var(--tx2); background:var(--bg2); }
+.tool:hover { border-color:var(--ln2); color:var(--tx); }
+.tool b { color:var(--tx); }
+.tool .sub { display:block; color:var(--tx3); font-size:var(--fs-xs); margin-top:2px; }
+.hit { padding:4px 2px; border-bottom:1px solid var(--ln); font:var(--fs-sm)/1.5 var(--mono); color:var(--tx2); }
+.hit .sev-err { color:var(--err); }
+.hit .sev-warn { color:var(--warn); }
+.hit .f { color:var(--lane-x); }
+.dw-meta { color:var(--tx3); font:var(--fs-xs) var(--mono); margin:6px 0 10px; }
+.dw-form { display:flex; gap:6px; margin-bottom:10px; }
+.dw-form input { flex:1; background:var(--bg2); border:1px solid var(--ln2); border-radius:var(--r2); padding:6px 10px;
+  color:var(--tx); font:var(--fs-sm) var(--mono); }
+.dw-form button { border:1px solid var(--ln2); border-radius:var(--r2); padding:6px 14px; color:var(--tx); }
+.dw-form button:hover { background:var(--bg3); }
 .sitem .stools { float:right; margin-left:4px; }
 .sitem .stools button { padding:0 5px; border-radius:var(--r1); color:var(--tx3); font-size:10px; background:none; border:none; cursor:pointer; }
 .sitem .stools button:hover { color:var(--err); background:var(--bg3); }
@@ -230,10 +256,15 @@ select.chip option { background:var(--bg2); color:var(--tx); }
 </head>
 <body>
 <div id="app">
+  <div id="drawer" hidden role="dialog" aria-label="面板">
+    <div class="dw-head"><span id="dwTitle"></span><span class="grow"></span><button id="dwClose" title="关闭">✕</button></div>
+    <div id="dwBody"></div>
+  </div>
   <nav id="rail" aria-label="主导航">
     <button class="rb on" id="rbChat" data-sec="chat" title="对话"><svg viewBox="0 0 24 24"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9.6 9.6 0 0 1-3.2-.5L4 21l1.7-4.2A8.4 8.4 0 1 1 21 11.5z"/></svg></button>
     <button class="rb" id="rbRuns" data-sec="runs" title="运行"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg></button>
     <button class="rb" id="rbTasks" data-sec="tasks" title="任务"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3.5 2"/></svg></button>
+    <button class="rb" id="rbTools" data-sec="tools" title="工具箱"><svg viewBox="0 0 24 24"><path d="M14.7 6.3a4.2 4.2 0 0 0-5.9 5.9L4 17l3 3 4.8-4.8a4.2 4.2 0 0 0 5.9-5.9l-2.4 2.4-2.1-.6-.6-2.1z"/></svg></button>
     <div class="rgrow"></div>
     <button class="rb" id="rbAbout" title="关于"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5M12 8h.01"/></svg></button>
   </nav>
@@ -244,6 +275,10 @@ select.chip option { background:var(--bg2); color:var(--tx); }
       <div class="slist" id="lstExp"></div>
       <div class="shead">会话 <span class="cnt" id="cntSes"></span></div>
       <div class="slist" id="lstSes" style="max-height:34%"></div>
+    </div>
+    <div class="sec" id="secTools">
+      <div class="shead">工具箱 <span class="cnt" id="cntTools"></span></div>
+      <div class="slist" id="lstTools"></div>
     </div>
     <div class="sec" id="secRuns">
       <div class="shead">运行产物 <span class="cnt" id="cntRuns"></span></div>
@@ -792,14 +827,15 @@ function autoGrow() {
 
 /* ---- rail / about ---- */
 function switchSec(sec) {
-  ["chat", "runs", "tasks"].forEach(function (s) {
+  ["chat", "runs", "tasks", "tools"].forEach(function (s) {
     $("sec" + s.charAt(0).toUpperCase() + s.slice(1)).className = "sec" + (s === sec ? " on" : "");
   });
-  ["rbChat", "rbRuns", "rbTasks"].forEach(function (id) {
+  ["rbChat", "rbRuns", "rbTasks", "rbTools"].forEach(function (id) {
     $(id).className = "rb" + (id === "rb" + sec.charAt(0).toUpperCase() + sec.slice(1) ? " on" : "");
   });
   if (sec === "runs") renderRuns();
   if (sec === "tasks") renderTasks();
+  if (sec === "tools") renderTools();
 }
 function showAbout() {
   clearStream();
@@ -808,6 +844,83 @@ function showAbout() {
   appendFact(card, { t: "notice", tone: "info", text: "v5 全新 UI（从零重写）：rail+三栏 · composer 内联 chip · 审批接管 · 一行状态栏" });
   appendFact(card, { t: "notice", tone: "info", text: "更新要点见 CHANGELOG；设计约束：check-ui-tokens（--fs-* 六档 / 色值 token 化）" });
   cardSt(card, "v" + VERSION);
+}
+
+/* ---- v5 · S2：工具箱面板框架 + 首批面板 ---- */
+var TOOLS = [
+  { id: "scan", name: "密钥扫描", sub: "scanSecrets —— 工作区敏感信息扫描（只读）", run: "scanPanel" },
+  { id: "symbols", name: "符号索引", sub: "indexSymbols/lookupDef —— 按名查找定义与引用", run: "symbolsPanel" },
+];
+function renderTools() {
+  var el = $("lstTools"); el.innerHTML = "";
+  $("cntTools").textContent = String(TOOLS.length);
+  TOOLS.forEach(function (t) {
+    var b = document.createElement("button");
+    b.className = "tool";
+    b.innerHTML = "<b>" + esc(t.name) + "</b><span class='sub'>" + esc(t.sub) + "</span>";
+    b.onclick = function () { openDrawer(t.name); window[t.run](); };
+    el.appendChild(b);
+  });
+  var note = document.createElement("div");
+  note.className = "dw-meta";
+  note.textContent = "更多面板（SBOM / DB / MCP / Diff / PDF…）S2 续批迁移";
+  el.appendChild(note);
+}
+function openDrawer(title) {
+  $("dwTitle").textContent = title;
+  $("dwBody").innerHTML = "";
+  $("drawer").hidden = false;
+}
+function closeDrawer() { $("drawer").hidden = true; }
+function scanPanel() {
+  var body = $("dwBody");
+  body.innerHTML = '<button class="mini" id="scanGo">▶ 开始扫描</button><div id="scanOut" style="margin-top:10px"></div>';
+  $("scanGo").onclick = function () {
+    var out = $("scanOut");
+    out.innerHTML = '<div class="dw-meta">扫描中…</div>';
+    api("/api/toolbox/scan").then(function (j) {
+      if (!j || j.ok === false) { out.innerHTML = '<div class="dw-meta">失败：' + esc((j && j.error) || "?") + "</div>"; return; }
+      var meta = (j.scanned != null ? j.scanned + " 文件" : "") + (j.hits ? " · " + j.hits.length + " 命中" : "") +
+        (j.tookMs != null ? " · " + j.tookMs + "ms" : "") + (j.patterns != null ? " · " + j.patterns + " 类模式" : "");
+      var h = '<div class="dw-meta">' + esc(meta) + "</div>";
+      (j.hits || []).slice(0, 120).forEach(function (x) {
+        var sev = (x.severity === "high" || x.severity === "critical") ? "err" : "warn";
+        h += '<div class="hit"><span class="sev-' + sev + '">●</span> <span class="f">' + esc(x.file) + ":" + x.line +
+          "</span> · " + esc(x.pattern) + " · " + esc(String(x.preview || "").slice(0, 80)) + "</div>";
+      });
+      if (!(j.hits || []).length) h += '<div class="dw-meta">未发现命中 ✓</div>';
+      out.innerHTML = h;
+    }).catch(function (e) { out.innerHTML = '<div class="dw-meta">失败：' + esc(String(e)) + "</div>"; });
+  };
+}
+function symbolsPanel() {
+  var body = $("dwBody");
+  body.innerHTML = '<div class="dw-form"><input id="symIn" placeholder="符号名（如 notice-parser）" autocomplete="off"><button id="symGo">查找</button></div><div id="symOut"></div>';
+  function go() {
+    var name = $("symIn").value.trim();
+    if (!name) return;
+    var out = $("symOut");
+    out.innerHTML = '<div class="dw-meta">索引中…</div>';
+    api("/api/toolbox/symbols?name=" + encodeURIComponent(name)).then(function (j) {
+      if (!j || j.ok === false) { out.innerHTML = '<div class="dw-meta">失败：' + esc((j && j.error) || "?") + "</div>"; return; }
+      var h = '<div class="dw-meta">索引 ' + (j.files || 0) + " 文件 · " + (j.symbols || 0) + " 符号</div>";
+      h += '<div class="dw-meta">定义（' + ((j.defs || []).length) + "）：</div>";
+      (j.defs || []).forEach(function (d) {
+        h += '<div class="hit"><span class="f">' + esc(d.file || "?") + ":" + (d.line || "?") + "</span> · " +
+          esc(d.kind || d.type || "def") + " <b>" + esc(d.name || name) + "</b></div>";
+      });
+      if (!(j.defs || []).length) h += '<div class="hit">（无定义命中）</div>';
+      h += '<div class="dw-meta">引用（' + ((j.refs || []).length) + "）：</div>";
+      (j.refs || []).forEach(function (r) {
+        h += '<div class="hit"><span class="f">' + esc(r.file || "?") + ":" + (r.line || "?") + "</span> · " +
+          esc(String(r.text || r.preview || "").slice(0, 90)) + "</div>";
+      });
+      out.innerHTML = h;
+    }).catch(function (e) { out.innerHTML = '<div class="dw-meta">失败：' + esc(String(e)) + "</div>"; });
+  }
+  $("symGo").onclick = go;
+  $("symIn").addEventListener("keydown", function (e) { if (e.key === "Enter") go(); });
+  $("symIn").focus();
 }
 
 /* ---- 数据装载 ---- */
@@ -858,6 +971,8 @@ $("rbChat").onclick = function () { switchSec("chat"); };
 $("rbRuns").onclick = function () { switchSec("runs"); };
 $("rbTasks").onclick = function () { switchSec("tasks"); };
 $("rbAbout").onclick = function () { showAbout(); };
+$("rbTools").onclick = function () { switchSec("tools"); };
+$("dwClose").onclick = closeDrawer;
 $("newAsk").onclick = function () { state.currentSession = null; renderSessions(); crumb(); clearStream(); renderEmpty(); hint("新会话"); };
 $("chipMode").onclick = function () {
   state.mode = state.mode === "team" ? "direct" : "team";
@@ -876,12 +991,15 @@ $("inp").addEventListener("keydown", function (e) {
   if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
 });
 document.addEventListener("keydown", function (e) {
-  if (e.key === "Escape" && state.running) abortRun();
+  if (e.key !== "Escape") return;
+  if (!$("drawer").hidden) { closeDrawer(); return; }
+  if (state.running) abortRun();
 });
 
 /* ---- boot ---- */
 loadStatus().then(function () { loadProviders(); });
 loadRuns();
+renderTools();
 refreshApprovals();
 setInterval(refreshApprovals, 5000);
 setInterval(renderSb, 10000);
