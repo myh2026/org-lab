@@ -181,6 +181,11 @@ button.mini:hover { color:var(--tx); background:var(--bg3); }
 .dw-ta { display:block; width:100%; min-height:110px; background:var(--bg2); border:1px solid var(--ln2);
   border-radius:var(--r2); padding:8px 10px; color:var(--tx); font:var(--fs-sm)/1.5 var(--mono);
   resize:vertical; margin-bottom:8px; }
+.dw-form select { background:var(--bg2); border:1px solid var(--ln2); border-radius:var(--r2);
+  padding:6px 8px; color:var(--tx); font:var(--fs-sm) var(--mono); }
+.dw-form label { color:var(--tx3); font-size:var(--fs-xs); display:inline-flex; align-items:center; gap:3px; }
+.hit a { color:var(--ac); text-decoration:none; }
+.hit a:hover { text-decoration:underline; }
 .sitem .stools { float:right; margin-left:4px; }
 .sitem .stools button { padding:0 5px; border-radius:var(--r1); color:var(--tx3); font-size:10px; background:none; border:none; cursor:pointer; }
 .sitem .stools button:hover { color:var(--err); background:var(--bg3); }
@@ -873,6 +878,7 @@ var TOOLS = [
   { id: "review", name: "审查人推荐", sub: "recommendReviewers —— 按改动文件推荐审查人", run: "reviewPanel" },
   { id: "tracker", name: "工单台账", sub: "issueList —— GitHub issue 只读列取（token 已配）", run: "trackerPanel" },
   { id: "providers", name: "车道与服务", sub: "providerRows/lanes —— 车道表 + 连通测试 + env 发现", run: "providersPanel" },
+  { id: "audio", name: "音频工坊", sub: "audioCompose —— 确定性作曲（零模型调用 → 可播放）", run: "audioPanel" },
 ];
 function renderTools() {
   var el = $("lstTools"); el.innerHTML = "";
@@ -1289,6 +1295,49 @@ function providersPanel() {
     }).catch(function (e) { err(String(e)); });
   };
   $("pvGo").onclick();
+}
+function audioPanel() {
+  var TIMBRES = ["piano", "strings", "flute", "organ", "harpsichord", "music-box", "guitar", "bell"];
+  var PROGS = ["canon", "pop", "epic", "circle", "jazz", "blues", "romance"];
+  function opts(arr) { return arr.map(function (x) { return '<option value="' + x + '">' + x + '</option>'; }).join(""); }
+  $("dwBody").innerHTML = '<div class="dw-form">' +
+    '<select id="adTimbre">' + opts(TIMBRES) + '</select>' +
+    '<select id="adProg">' + opts(PROGS) + '</select>' +
+    '<select id="adStyle"><option value="arp">arp</option><option value="block">block</option></select>' +
+    '<input id="adTempo" placeholder="速度" style="max-width:70px" value="72" autocomplete="off">' +
+    '<input id="adTitle" placeholder="标题（可选）" autocomplete="off">' +
+    '</div><div class="dw-form" style="align-items:center">' +
+    '<label><input type="checkbox" id="adWav" checked> wav</label>' +
+    '<label><input type="checkbox" id="adMid"> mid</label>' +
+    '<label><input type="checkbox" id="adMp3" checked> mp3</label>' +
+    '<label><input type="checkbox" id="adM4a"> m4a</label>' +
+    '<button id="adGo" style="margin-left:auto">♪ 作曲</button></div><div id="adOut"></div>';
+  function err(e) { $("adOut").innerHTML = '<div class="dw-meta">失败：' + esc(e) + '</div>'; }
+  $("adGo").onclick = function () {
+    var deliver = [];
+    if ($("adWav").checked) deliver.push("wav");
+    if ($("adMid").checked) deliver.push("mid");
+    if ($("adMp3").checked) deliver.push("mp3");
+    if ($("adM4a").checked) deliver.push("m4a");
+    var body = {
+      timbre: $("adTimbre").value, prog: $("adProg").value, style: $("adStyle").value,
+      tempo: Number($("adTempo").value) || 72,
+      title: $("adTitle").value.trim() || undefined,
+      deliver: deliver,
+    };
+    $("adOut").innerHTML = '<div class="dw-meta">作曲中…（零模型调用 · 合成直出）</div>';
+    api("/api/audio-compose", body).then(function (j) {
+      if (!j || j.ok === false) { err((j && j.error) || "?"); return; }
+      var h = '<div class="dw-meta">《' + esc(j.title || j.name) + "》 · " + esc(j.timbre) + "/" + esc(j.style) + " · " +
+        (j.tempo || "") + " BPM · " + (j.durationSec != null ? j.durationSec + "s" : "") + " · " + (j.notes || 0) + " 音符" + '</div>';
+      h += '<div class="dw-meta">和声：' + esc((j.chords || []).join(" → ")) + '</div>';
+      (j.files || []).forEach(function (f) {
+        h += '<div class="hit">📎 <a href="' + esc(f.url) + '" target="_blank" rel="noopener">▶ ' + esc(f.file) + '</a></div>';
+      });
+      (j.degrade || []).forEach(function (d) { h += '<div class="dw-meta">降级：' + esc(String(d)) + '</div>'; });
+      $("adOut").innerHTML = h;
+    }).catch(function (e) { err(String(e)); });
+  };
 }
 function cloudPanel() {
   $("dwBody").innerHTML = '<button class="mini" id="cloudGo">▶ 探测云工具链</button><div id="cloudOut" style="margin-top:10px"></div>';

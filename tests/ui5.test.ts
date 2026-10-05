@@ -29,7 +29,7 @@ describe("UI v5 骨架冒烟（ORG_WEB_UI=v5 轨）", () => {
       "function renderSessions", "function renameSession", "function deleteSession",
       "function refreshApprovals", "function renderSb", "function replayRun",
       "function renderTools", "function openDrawer", "function closeDrawer",
-      "function scanPanel", "function symbolsPanel", "function sbomPanel", "function dbPanel", "function diffPanel", "function pdfPanel", "function mcpPanel", "function sastPanel", "function iacPanel", "function gitPanel", "function depsPanel", "function debugPanel", "function cloudPanel", "function retestPanel", "function spawnsPanel", "function reviewPanel", "function trackerPanel", "function providersPanel",
+      "function scanPanel", "function symbolsPanel", "function sbomPanel", "function dbPanel", "function diffPanel", "function pdfPanel", "function mcpPanel", "function sastPanel", "function iacPanel", "function gitPanel", "function depsPanel", "function debugPanel", "function cloudPanel", "function retestPanel", "function spawnsPanel", "function reviewPanel", "function trackerPanel", "function providersPanel", "function audioPanel",
     ];
     const miss = fns.filter((k) => !page.includes(k));
     if (miss.length) console.error("缺失函数:", miss.join(", "));
