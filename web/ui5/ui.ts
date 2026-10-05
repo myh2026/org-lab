@@ -178,6 +178,9 @@ button.mini:hover { color:var(--tx); background:var(--bg3); }
 .dw-pre { white-space:pre-wrap; word-break:break-all; font:var(--fs-sm)/1.55 var(--mono); color:var(--tx2);
   background:var(--bg2); border:1px solid var(--ln); border-radius:var(--r2); padding:8px 10px;
   max-height:52vh; overflow:auto; margin:0; }
+.dw-ta { display:block; width:100%; min-height:110px; background:var(--bg2); border:1px solid var(--ln2);
+  border-radius:var(--r2); padding:8px 10px; color:var(--tx); font:var(--fs-sm)/1.5 var(--mono);
+  resize:vertical; margin-bottom:8px; }
 .sitem .stools { float:right; margin-left:4px; }
 .sitem .stools button { padding:0 5px; border-radius:var(--r1); color:var(--tx3); font-size:10px; background:none; border:none; cursor:pointer; }
 .sitem .stools button:hover { color:var(--err); background:var(--bg3); }
@@ -862,6 +865,8 @@ var TOOLS = [
   { id: "sast", name: "SAST 扫描", sub: "scanSast —— 多引擎静态安全扫描（ruff→bandit→内置）", run: "sastPanel" },
   { id: "iac", name: "IaC 扫描", sub: "scanIac —— 基础设施即代码检查（HCL/YAML…）", run: "iacPanel" },
   { id: "git", name: "Git 状态", sub: "gitMergeState —— 分支 / 领先落后 / 工作树（只读）", run: "gitPanel" },
+  { id: "deps", name: "依赖探测", sub: "probeDepsTools/parseDepsManifest —— 七工具 + 清单摘要", run: "depsPanel" },
+  { id: "debug", name: "堆栈分析", sub: "analyzeStackTrace —— 粘贴崩溃文本 → 帧与根因提示", run: "debugPanel" },
 ];
 function renderTools() {
   var el = $("lstTools"); el.innerHTML = "";
@@ -1167,6 +1172,70 @@ function gitPanel() {
   }
   $("gitGo").onclick = load;
   load();
+}
+function depsPanel() {
+  $("dwBody").innerHTML = '<button class="mini" id="depsGo">▶ 探测依赖工具</button><div id="depsOut" style="margin-top:10px"></div>';
+  function err(e) { $("depsOut").innerHTML = '<div class="dw-meta">失败：' + esc(e) + '</div>'; }
+  $("depsGo").onclick = function () {
+    $("depsOut").innerHTML = '<div class="dw-meta">探测中…（uv/pip/poetry/bun/npm/pnpm/cargo）</div>';
+    api("/api/govex/deps", { action: "probe" }).then(function (j) {
+      if (!j || j.ok === false) { err((j && j.error) || "?"); return; }
+      var h = '<div class="dw-meta">工具 ' + (j.tools || []).filter(function (t) { return t.available; }).length +
+        "/" + ((j.tools || []).length) + " 在场</div>";
+      (j.tools || []).forEach(function (t) {
+        h += '<div class="hit">' + (t.available ? "✓" : "⬜") + " <b>" + esc(t.name) + '</b>' +
+          (t.version ? " · " + esc(String(t.version).slice(0, 60)) : "") +
+          (!t.available && t.note ? ' · <span class="dw-meta" style="display:inline">' + esc(String(t.note).slice(0, 70)) + '</span>' : "") + '</div>';
+      });
+      if (j.manifest) {
+        h += '<div class="dw-meta">📦 清单 ' + esc(j.manifest.file) + " · " + esc(j.manifest.kind || "") + " · " +
+          (j.manifest.deps || 0) + " 依赖" + (j.manifest.name ? " · " + esc(j.manifest.name) + (j.manifest.version ? "@" + esc(j.manifest.version) : "") : "") + '</div>';
+      } else {
+        h += '<div class="dw-meta">（工作区未见 package.json / pyproject.toml / Cargo.toml）</div>';
+      }
+      $("depsOut").innerHTML = h;
+    }).catch(function (e) { err(String(e)); });
+  };
+}
+function debugPanel() {
+  $("dwBody").innerHTML = '<textarea class="dw-ta" id="dbgText" placeholder="粘贴崩溃输出全文 —— Traceback / at 帧 / panicked 均可"></textarea>' +
+    '<div class="dw-form"><button id="dbgGo">分析</button></div><div id="dbgOut"></div>';
+  function err(e) { $("dbgOut").innerHTML = '<div class="dw-meta">失败：' + esc(e) + '</div>'; }
+  $("dbgGo").onclick = function () {
+    var text = $("dbgText").value;
+    if (!text.trim()) { err("先粘贴崩溃文本"); return; }
+    $("dbgOut").innerHTML = '<div class="dw-meta">分析中…</div>';
+    api("/api/govex/debug", { action: "stack", text: text }).then(function (j) {
+      if (!j || j.ok === false) { err((j && (j.error || j.reason)) || "?"); return; }
+      var st = j.stats || {};
+      var h = '<div class="dw-meta">语言 ' + esc(j.language || "?") + " · 检出 " + esc(j.detected_by || "?") +
+        (st.frames != null ? " · 帧 " + st.frames : "") + (st.app_frames != null ? "（应用 " + st.app_frames + "）" : "") +
+        (j.truncated ? " · 截断" : "") + '</div>';
+      var inner = j.innermost_app_frame;
+      if (inner) {
+        h += '<div class="hit"><b>最内层应用帧</b> ' + (typeof inner === "string" ? esc(inner) :
+          esc(inner.file || "?") + (inner.line != null ? ":" + inner.line : "") + " " + esc(inner.fn || inner.name || "")) + '</div>';
+      }
+      (j.frames || []).forEach(function (f) {
+        h += '<div class="hit">' + (f.app || f.isApp ? "★ " : "  ") + '<span class="f">' + esc(f.file || f.path || "?") +
+          (f.line != null ? ":" + f.line : "") + '</span> ' + esc(f.fn || f.func || f.name || "") + '</div>';
+      });
+      if ((j.hints || []).length) {
+        h += '<div class="dw-meta">根因提示：</div>';
+        (j.hints || []).forEach(function (x) {
+          var xt;
+          if (typeof x === "string") { xt = x; }
+          else {
+            xt = x.title || x.text || x.message || x.hint || "";
+            if (x.cause) { xt += " —— " + x.cause; }
+            if (!xt) { xt = JSON.stringify(x); }
+          }
+          h += '<div class="hit">💡 ' + esc(String(xt).slice(0, 200)) + '</div>';
+        });
+      }
+      $("dbgOut").innerHTML = h;
+    }).catch(function (e) { err(String(e)); });
+  };
 }
 
 /* ---- 数据装载 ---- */
