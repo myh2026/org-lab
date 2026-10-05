@@ -867,6 +867,7 @@ var TOOLS = [
   { id: "git", name: "Git 状态", sub: "gitMergeState —— 分支 / 领先落后 / 工作树（只读）", run: "gitPanel" },
   { id: "deps", name: "依赖探测", sub: "probeDepsTools/parseDepsManifest —— 七工具 + 清单摘要", run: "depsPanel" },
   { id: "debug", name: "堆栈分析", sub: "analyzeStackTrace —— 粘贴崩溃文本 → 帧与根因提示", run: "debugPanel" },
+  { id: "cloud", name: "云工具链", sub: "cloudProbeAll —— docker / ssh / k8s / terraform 探测", run: "cloudPanel" },
 ];
 function renderTools() {
   var el = $("lstTools"); el.innerHTML = "";
@@ -1234,6 +1235,39 @@ function debugPanel() {
         });
       }
       $("dbgOut").innerHTML = h;
+    }).catch(function (e) { err(String(e)); });
+  };
+}
+function cloudPanel() {
+  $("dwBody").innerHTML = '<button class="mini" id="cloudGo">▶ 探测云工具链</button><div id="cloudOut" style="margin-top:10px"></div>';
+  function err(e) { $("cloudOut").innerHTML = '<div class="dw-meta">失败：' + esc(e) + '</div>'; }
+  function grp(name, g) {
+    if (!g) return "";
+    var bits = [g.available ? "✓" : "⬜"];
+    if (g.version) bits.push(esc(String(g.version).slice(0, 40)));
+    if (g.daemonReachable != null) bits.push("daemon " + (g.daemonReachable ? "通" : "断"));
+    if (g.clusterReachable != null) bits.push("cluster " + (g.clusterReachable ? "通" : "断"));
+    return '<div class="hit"><b>' + esc(name) + '</b> · ' + bits.join(" · ") + '</div>';
+  }
+  $("cloudGo").onclick = function () {
+    $("cloudOut").innerHTML = '<div class="dw-meta">探测中…（docker/ssh/k8s/terraform + CLI 族）</div>';
+    api("/api/govex/cloud?action=probe").then(function (j) {
+      if (!j || j.ok === false) { err((j && j.error) || "?"); return; }
+      var sm = j.summary || {};
+      var h = '<div class="dw-meta">探测 ' + (j.took_ms || 0) + "ms · docker " + (sm.dockerAvailable ? "✓" : "⬜") +
+        " · ssh " + (sm.sshAvailable ? "✓" : "⬜") + " · k8s " + (sm.k8sAvailable ? "✓" : "⬜") +
+        " · terraform " + (sm.terraformAvailable ? "✓" : "⬜") + '</div>';
+      h += grp("docker", j.docker) + grp("ssh", j.ssh) + grp("k8s", j.k8s) + grp("terraform", j.terraform);
+      var clis = j.clis || [];
+      if (clis.length) {
+        h += '<div class="dw-meta">CLI ' + clis.filter(function (c) { return c.available; }).length + "/" + clis.length + '：</div>';
+        clis.forEach(function (c) {
+          h += '<div class="hit">' + (c.available ? "✓" : "⬜") + " " + esc(c.name || "?") +
+            (c.version ? " · " + esc(String(c.version).slice(0, 44)) : "") + '</div>';
+        });
+      }
+      if (j.hint) h += '<div class="dw-meta">' + esc(String(j.hint).slice(0, 160)) + '</div>';
+      $("cloudOut").innerHTML = h;
     }).catch(function (e) { err(String(e)); });
   };
 }
