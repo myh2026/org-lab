@@ -973,6 +973,7 @@ var TOOLS = [
   { id: "openapi", name: "OpenAPI 解析", sub: "parseOpenApi —— spec → 操作清单 + 工具名建议", run: "openapiPanel" },
   { id: "lsp", name: "LSP 符号", sub: "lspDefinition/References/Hover —— 定义/引用/悬停", run: "lspPanel" },
   { id: "dbdiag", name: "SQL 诊断", sub: "dbDiagnose —— 查询计划 + 优化建议", run: "dbdiagPanel" },
+  { id: "plag", name: "原创性自检", sub: "checkPlagiarism —— 7 字滑窗 + LCS 查重（F3）", run: "plagPanel" },
 ];
 function renderTools() {
   var el = $("lstTools"); el.innerHTML = "";
@@ -1972,6 +1973,33 @@ function dbdiagPanel() {
       $("ddOut").innerHTML = h;
     }).catch(function (e) { err(String(e)); });
   };
+}
+function plagPanel() {
+  $("dwBody").innerHTML = '<div class="dw-form"><input id="plgFile" placeholder="样本文件（工作区相对路径）" autocomplete="off"></div>' +
+    '<div class="dw-form"><input id="plgRefs" placeholder="参考语料（逗号分隔多文件）" autocomplete="off"><button id="plgGo">自检</button></div><div id="plgOut"></div>';
+  function err(e) { $("plgOut").innerHTML = '<div class="dw-meta">失败：' + esc(e) + '</div>'; }
+  $("plgGo").onclick = function () {
+    var f = $("plgFile").value.trim();
+    var refs = $("plgRefs").value.split(",").map(function (x) { return x.trim(); }).filter(Boolean);
+    if (!f || !refs.length) { err("样本与至少一个参考文件都要填"); return; }
+    $("plgOut").innerHTML = '<div class="dw-meta">查重中…（7 字滑窗 + LCS）</div>';
+    api("/api/toolbox/plag", { file: f, refs: refs }).then(function (j) {
+      if (!j || j.ok === false) { err((j && j.error) || "?"); return; }
+      var badge = j.verdict === "pass" ? "通过 ✓" : j.verdict === "borderline" ? "擦边 ~" : "不合格 ✗";
+      var cls = j.verdict === "pass" ? "ok" : j.verdict === "borderline" ? "warn" : "err";
+      var h = '<div class="dw-meta"><b class="sev-' + (cls === "ok" ? "ok" : cls) + '">' + badge + '</b> · 滑窗 ' + j.windows +
+        ' · ' + esc(j.summary || "") + '</div>';
+      (j.refs || []).forEach(function (r2) {
+        var mk = r2.hit80 > 0 ? "✗" : r2.hits > 0 ? "~" : "✓";
+        h += '<div class="hit">' + mk + " <b>" + esc(r2.name) + '</b> · 命中 ' + r2.hits + "（近逐字 " + r2.hit80 + " · " + r2.pct + '%）</div>';
+        (r2.samples || []).slice(0, 6).forEach(function (sp) {
+          h += '<div class="hit">　　[' + sp.ratio + "] 「" + esc(sp.window) + "」 ~ 「" + esc(sp.refWindow) + "」</div>";
+        });
+      });
+      $("plgOut").innerHTML = h;
+    }).catch(function (e) { err(String(e)); });
+  };
+  $("plgFile").focus();
 }
 function cloudPanel() {
   $("dwBody").innerHTML = '<button class="mini" id="cloudGo">▶ 探测云工具链</button><div id="cloudOut" style="margin-top:10px"></div>';

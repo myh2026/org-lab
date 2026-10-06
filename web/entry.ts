@@ -67,6 +67,7 @@ import { AskGate, QueueCancelledError } from "./gate.ts";
 import { transcribeAudio, synthesizeSpeech, voiceStatus, VOICES } from "../lib/voice.ts"; // v0.5.12 语音入口（ASR/TTS）
 import { analyzeImages, visionStatus, VISION_MAX_IMAGES } from "../lib/vision.ts"; // v0.5.13 视觉入口（VLM 图片理解）
 import { ORG_VERSION as VERSION } from "../lib/version.ts"; // 版本单一来源（v0.4.14 漂移治理：此前本文件落后两版）
+import { checkPlagiarism } from "../lib/plagiarism.ts"; // v0.5.46 原创性/查重自检（F3 前置件 · Web 面）
 import { renderV5Page } from "./ui5/ui.ts"; // UI v5（从零重写）——ORG_WEB_UI=v5 时接管页面渲染
 import { latestSession } from "../lib/sessions.ts"; // v0.5.17：collab bridge 缺省会话（只读复用会话账本协议）
 import {
@@ -1378,6 +1379,30 @@ export function startWebServer(opts: { workspace: string; port: number; host?: s
           if (!r.ok) return json({ ok: false, error: (r.warnings || []).join("; ") }, 500);
           const sum = auditSummary(readWorkspaceOf(ws));
           return json({ ok: true, zip: path.basename(r.zip), entries: r.entries, bytes: r.bytes, summary: sum });
+        }
+        // v0.5.46：原创性/查重自检 Web 面（与 CLI org plag 同源 lib/plagiarism.ts）
+        if (route === "POST /api/toolbox/plag") {
+          const body = (await req.json().catch(() => ({}))) as { file?: unknown; refs?: unknown };
+          const file = String(body.file ?? "").trim();
+          const refs = Array.isArray(body.refs)
+            ? (body.refs as unknown[]).map(String).map((s2) => s2.trim()).filter(Boolean).slice(0, 20)
+            : [];
+          if (!file || refs.length === 0) return json({ ok: false, error: "file 与 refs（≥1 条）必填" }, 400);
+          const wsRoot = readWorkspaceOf(ws);
+          const inJail = (q: string): string | null => {
+            const abs = path.resolve(wsRoot, q);
+            const rel = path.relative(wsRoot, abs);
+            return rel.startsWith("..") || path.isAbsolute(rel) ? null : abs;
+          };
+          const absF = inJail(file);
+          const absRefs = refs.map(inJail);
+          if (!absF || absRefs.some((x) => x === null)) return json({ ok: false, error: "路径越界（仅限工作区内相对路径）" }, 400);
+          try {
+            const r = checkPlagiarism(absF, absRefs as string[]);
+            return json({ ok: true, ...r });
+          } catch (e) {
+            return json({ ok: false, error: (e as Error).message }, 400);
+          }
         }
         if (route === "GET /api/toolbox/sbom") {
           const r = buildSbom(ROOT);
