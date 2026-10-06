@@ -885,6 +885,8 @@ var TOOLS = [
   { id: "audio", name: "音频工坊", sub: "audioCompose —— 确定性作曲（零模型调用 → 可播放）", run: "audioPanel" },
   { id: "search", name: "语义检索", sub: "semanticSearch —— 工作区语义检索（hits/score/摘要）", run: "searchPanel" },
   { id: "memory", name: "专家记忆", sub: "allMemories —— 运行时记忆库（按专家分组）", run: "memoryPanel" },
+  { id: "sched", name: "定时任务", sub: "listSchedules/previewNext —— 计划清单 + cron 预览", run: "schedPanel" },
+  { id: "notify", name: "通知中心", sub: "readNotifications —— 未读/全量 + 一键已读", run: "notifyPanel" },
 ];
 function renderTools() {
   var el = $("lstTools"); el.innerHTML = "";
@@ -1399,6 +1401,62 @@ function memoryPanel() {
       $("mmOut").innerHTML = h;
     }).catch(function (e) { err(String(e)); });
   };
+}
+function schedPanel() {
+  $("dwBody").innerHTML = '<div class="dw-form"><input id="scExpr" placeholder="cron 表达式（如 0 9 * * *）" autocomplete="off"><button id="scPrev">预览</button>' +
+    '<button id="scGo" style="margin-left:auto">加载清单</button></div><div id="scOut"></div>';
+  function err(e) { $("scOut").innerHTML = '<div class="dw-meta">失败：' + esc(e) + '</div>'; }
+  $("scPrev").onclick = function () {
+    var expr = $("scExpr").value.trim();
+    if (!expr) { err("先输入 cron 表达式"); return; }
+    $("scOut").innerHTML = '<div class="dw-meta">计算下一批…</div>';
+    api("/api/schedules/preview?expr=" + encodeURIComponent(expr)).then(function (j) {
+      if (!j || j.ok === false) { err((j && j.error) || "?"); return; }
+      var h = '<div class="dw-meta">下一批（3 次）：</div>';
+      (j.next || []).forEach(function (d) { h += '<div class="hit">⏰ ' + esc(String(d).replace("T", " ").slice(0, 19)) + '</div>'; });
+      $("scOut").innerHTML = h;
+    }).catch(function (e) { err(String(e)); });
+  };
+  $("scGo").onclick = function () {
+    $("scOut").innerHTML = '<div class="dw-meta">加载中…</div>';
+    api("/api/schedules").then(function (j) {
+      if (!j || j.ok === false) { err((j && j.error) || "?"); return; }
+      var list = j.schedules || [];
+      var h = '<div class="dw-meta">共 ' + list.length + " 条计划</div>";
+      list.forEach(function (x) {
+        var goal = x.goal || x.task || x.command || x.title || JSON.stringify(x).slice(0, 80);
+        h += '<div class="hit"><b>' + esc(x.id != null ? "#" + x.id : "·") + '</b> · <code>' + esc(x.expr || "?") + '</code> · ' +
+          esc(String(goal).slice(0, 110)) + (x.enabled === false ? " · 停用" : "") + '</div>';
+      });
+      if (!list.length) h += '<div class="dw-meta">（无计划 —— CLI: org sched add "…" --expr "0 9 * * *"）</div>';
+      $("scOut").innerHTML = h;
+    }).catch(function (e) { err(String(e)); });
+  };
+}
+function notifyPanel() {
+  $("dwBody").innerHTML = '<div class="dw-form"><button id="ntGo">▶ 加载通知</button><button id="ntAll" style="margin-left:auto">全部已读</button></div><div id="ntOut"></div>';
+  function err(e) { $("ntOut").innerHTML = '<div class="dw-meta">失败：' + esc(e) + '</div>'; }
+  function load() {
+    $("ntOut").innerHTML = '<div class="dw-meta">加载中…</div>';
+    api("/api/notifications").then(function (j) {
+      if (!j || j.ok === false) { err((j && j.error) || "?"); return; }
+      var ns = j.notifications || [];
+      var h = '<div class="dw-meta">未读 ' + (j.unread || 0) + " · 本列表 " + ns.length + " 条</div>";
+      ns.forEach(function (n2) {
+        var ts = n2.ts || n2.time || n2.at || "";
+        var txt = n2.title || n2.text || n2.message || JSON.stringify(n2).slice(0, 90);
+        h += '<div class="hit">' + (n2.read ? "·" : "●") + " " +
+          (ts ? '<span class="dw-meta">' + esc(String(ts).slice(0, 19)) + "</span> " : "") + esc(String(txt).slice(0, 150)) + '</div>';
+      });
+      if (!ns.length) h += '<div class="dw-meta">（没有未读通知）</div>';
+      $("ntOut").innerHTML = h;
+    }).catch(function (e) { err(String(e)); });
+  }
+  $("ntGo").onclick = load;
+  $("ntAll").onclick = function () {
+    api("/api/notifications", { action: "read", id: "all" }).then(function () { load(); });
+  };
+  load();
 }
 function cloudPanel() {
   $("dwBody").innerHTML = '<button class="mini" id="cloudGo">▶ 探测云工具链</button><div id="cloudOut" style="margin-top:10px"></div>';
