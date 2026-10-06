@@ -917,6 +917,8 @@ var TOOLS = [
   { id: "collab", name: "协作空间", sub: "collabSummary/threads/feed —— 多人协作线程与动态", run: "collabPanel" },
   { id: "vision", name: "视觉分析", sub: "analyzeImages —— 选图 → 描述/问答（VLM）", run: "visionPanel" },
   { id: "voice", name: "语音工坊", sub: "transcribeAudio / synthesizeSpeech —— 转写 + 朗读", run: "voicePanel" },
+  { id: "mobile", name: "移动端", sub: "probeMobile/mobileDevices —— 工具探测 + 设备清单", run: "mobilePanel" },
+  { id: "remote", name: "远程 Agent", sub: "probeRemote/remoteHosts —— ssh 工具链 + 主机档案", run: "remotePanel" },
 ];
 function renderTools() {
   var el = $("lstTools"); el.innerHTML = "";
@@ -1655,6 +1657,96 @@ function voicePanel() {
     if (a === "tts") ttsView();
   });
   asrView();
+}
+function mobilePanel() {
+  $("dwBody").innerHTML = '<div class="dw-form" id="mbTabs"><button data-a="probe" class="on">工具探测</button><button data-a="devices">设备清单</button></div><div id="mbOut"></div>';
+  var out = $("mbOut");
+  function err(e) { out.innerHTML = '<div class="dw-meta">失败：' + esc(e) + '</div>'; }
+  function tab(a) {
+    var ts = document.querySelectorAll("#mbTabs button");
+    for (var i = 0; i < ts.length; i++) { ts[i].className = ts[i].getAttribute("data-a") === a ? "on" : ""; }
+  }
+  function go(a) {
+    tab(a);
+    out.innerHTML = '<div class="dw-meta">加载中…</div>';
+    api("/api/govex/mobile?action=" + a).then(function (j) {
+      if (!j || j.ok === false) { err((j && j.error) || (j && j.reason) || "?"); return; }
+      var h = "";
+      if (a === "probe") {
+        var names = ["adb", "aapt", "aapt2", "scrcpy", "ideviceinstaller", "idevice_id", "flutter"];
+        var okN = 0;
+        names.forEach(function (n2) { if (j[n2] && j[n2].available) okN++; });
+        h += '<div class="dw-meta">工具 ' + okN + "/" + names.length + ' 在场 · ' + (j.took_ms || 0) + "ms</div>";
+        names.forEach(function (n2) {
+          var f = j[n2] || {};
+          h += '<div class="hit">' + (f.available ? "✓" : "⬜") + " <b>" + esc(n2) + '</b>' +
+            (f.version ? " · " + esc(String(f.version).slice(0, 50)) : "") +
+            (!f.available && f.reason ? ' · <span class="dw-meta" style="display:inline">' + esc(String(f.reason).slice(0, 70)) + "</span>" : "") + '</div>';
+        });
+        if (j.android_home) h += '<div class="dw-meta">ANDROID_HOME: ' + esc(String(j.android_home)) + '</div>';
+        if (j.hint) h += '<div class="dw-meta">' + esc(String(j.hint).slice(0, 150)) + '</div>';
+      } else {
+        var ds = j.devices || [];
+        h += '<div class="dw-meta">设备 ' + ds.length + " · ready " + (j.ready || 0) + (j.ios != null ? " · iOS " + j.ios : "") + '</div>';
+        ds.forEach(function (d) {
+          h += '<div class="hit">📱 ' + esc(typeof d === "string" ? d : (d.id || d.serial || d.name || JSON.stringify(d).slice(0, 80))) + '</div>';
+        });
+        if (!ds.length) h += '<div class="dw-meta">（无设备 —— ' + esc(String(j.reason || j.hint || "插入设备并允许调试").slice(0, 120)) + "）</div>";
+        if (j.hint) h += '<div class="dw-meta">' + esc(String(j.hint).slice(0, 150)) + '</div>';
+      }
+      out.innerHTML = h;
+    }).catch(function (e) { err(String(e)); });
+  }
+  $("mbTabs").addEventListener("click", function (ev) {
+    var a = ev.target && ev.target.getAttribute ? ev.target.getAttribute("data-a") : null;
+    if (a) go(a);
+  });
+  go("probe");
+}
+function remotePanel() {
+  $("dwBody").innerHTML = '<div class="dw-form" id="rmTabs"><button data-a="probe" class="on">工具探测</button><button data-a="hosts">主机档案</button></div><div id="rmOut"></div>';
+  var out = $("rmOut");
+  function err(e) { out.innerHTML = '<div class="dw-meta">失败：' + esc(e) + '</div>'; }
+  function tab(a) {
+    var ts = document.querySelectorAll("#rmTabs button");
+    for (var i = 0; i < ts.length; i++) { ts[i].className = ts[i].getAttribute("data-a") === a ? "on" : ""; }
+  }
+  function go(a) {
+    tab(a);
+    out.innerHTML = '<div class="dw-meta">加载中…</div>';
+    api("/api/govex/remote?action=" + a).then(function (j) {
+      if (!j || j.ok === false) { err((j && j.error) || "?"); return; }
+      var h = "";
+      if (a === "probe") {
+        var rows = [
+          ["ssh", j.ssh ? j.ssh.available : false, j.ssh && j.ssh.version_raw ? j.ssh.version_raw : (j.ssh && j.ssh.open_ssh ? "OpenSSH " + j.ssh.open_ssh.major + "." + j.ssh.open_ssh.minor : "")],
+          ["rsync", j.rsync ? j.rsync.available : false, j.rsync && j.rsync.version ? j.rsync.version : ""],
+          ["scp", j.scp ? j.scp.available : false, ""],
+          ["ssh-keygen", j.ssh_keygen ? j.ssh_keygen.available : false, ""],
+        ];
+        h += '<div class="dw-meta">工具 ' + rows.filter(function (r) { return r[1]; }).length + "/" + rows.length + " 在场" +
+          (j.agent_forwarding != null ? " · agent 转发 " + (j.agent_forwarding ? "✓" : "⬜") : "") + '</div>';
+        rows.forEach(function (r) {
+          h += '<div class="hit">' + (r[1] ? "✓" : "⬜") + " <b>" + esc(r[0]) + '</b>' + (r[2] ? " · " + esc(String(r[2]).slice(0, 60)) : "") + '</div>';
+        });
+        if (j.reason) h += '<div class="dw-meta">' + esc(String(j.reason).slice(0, 120)) + '</div>';
+        if (j.hint) h += '<div class="dw-meta">' + esc(String(j.hint).slice(0, 150)) + '</div>';
+      } else {
+        h += '<div class="dw-meta">档案 ' + esc(j.file || "remote-hosts.json") + (j.exists ? "（" + (j.count || 0) + " 台）" : "（未创建）") + '</div>';
+        (j.hosts || []).forEach(function (h2) {
+          h += '<div class="hit">🖥 <b>' + esc(h2.name || "?") + '</b>' +
+            (h2.host ? " · " + esc(h2.host) : "") + (h2.user ? "@" + esc(h2.user) : "") + (h2.port ? ":" + h2.port : "") + '</div>';
+        });
+        if (!(j.hosts || []).length) h += '<div class="dw-meta">（无主机 —— 在工作区 remote-hosts.json 声明）</div>';
+      }
+      out.innerHTML = h;
+    }).catch(function (e) { err(String(e)); });
+  }
+  $("rmTabs").addEventListener("click", function (ev) {
+    var a = ev.target && ev.target.getAttribute ? ev.target.getAttribute("data-a") : null;
+    if (a) go(a);
+  });
+  go("probe");
 }
 function cloudPanel() {
   $("dwBody").innerHTML = '<button class="mini" id="cloudGo">▶ 探测云工具链</button><div id="cloudOut" style="margin-top:10px"></div>';
