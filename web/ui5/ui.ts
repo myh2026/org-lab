@@ -912,6 +912,7 @@ var TOOLS = [
   { id: "memory", name: "专家记忆", sub: "allMemories —— 运行时记忆库（按专家分组）", run: "memoryPanel" },
   { id: "sched", name: "定时任务", sub: "listSchedules/previewNext —— 计划清单 + cron 预览", run: "schedPanel" },
   { id: "notify", name: "通知中心", sub: "readNotifications —— 未读/全量 + 一键已读", run: "notifyPanel" },
+  { id: "collab", name: "协作空间", sub: "collabSummary/threads/feed —— 多人协作线程与动态", run: "collabPanel" },
 ];
 function renderTools() {
   var el = $("lstTools"); el.innerHTML = "";
@@ -1482,6 +1483,94 @@ function notifyPanel() {
     api("/api/notifications", { action: "read", id: "all" }).then(function () { load(); });
   };
   load();
+}
+function collabPanel() {
+  $("dwBody").innerHTML = '<div class="dw-form" id="cbTabs"><button data-a="summary" class="on">总览</button>' +
+    '<button data-a="threads">线程</button><button data-a="users">协作者</button></div><div id="cbOut"></div>';
+  var out = $("cbOut");
+  function err(e) { out.innerHTML = '<div class="dw-meta">失败：' + esc(e) + '</div>'; }
+  function tab(a) {
+    var tabs = document.querySelectorAll("#cbTabs button");
+    for (var i = 0; i < tabs.length; i++) { tabs[i].className = tabs[i].getAttribute("data-a") === a ? "on" : ""; }
+  }
+  function openFeed(id, title) {
+    out.innerHTML = '<div class="dw-meta">读取线程…</div>';
+    api("/api/govex/collab?action=feed&thread=" + encodeURIComponent(id)).then(function (j) {
+      if (!j || j.ok === false) { err((j && j.error) || "?"); return; }
+      var h = '<div class="dw-meta">🧵 <b>' + esc(title || id) + '</b> · ' + ((j.posts || []).length) + ' 帖' + (j.truncated ? "（截断）" : "") + '</div>';
+      (j.posts || []).forEach(function (pp) {
+        var pad = "";
+        for (var d = 0; d < (pp.depth || 0); d++) { pad += "　"; }
+        h += '<div class="hit">' + pad + '<span class="f">#' + (pp.seq || "?") + '</span> <b>' + esc(pp.user || "?") + '</b>' +
+          (pp.kind ? " · " + esc(pp.kind) : "") + (pp.at ? ' · <span class="dw-meta" style="display:inline">' + esc(String(pp.at).slice(0, 19)) + "</span>" : "") +
+          '<br><span style="white-space:pre-wrap">' + esc(String(pp.text || "").slice(0, 500)) + '</span></div>';
+      });
+      if (!(j.posts || []).length) h += '<div class="dw-meta">（线程无帖）</div>';
+      out.innerHTML = h;
+    }).catch(function (e) { err(String(e)); });
+  }
+  function go(a) {
+    tab(a);
+    out.innerHTML = '<div class="dw-meta">加载中…</div>';
+    if (a === "threads") {
+      api("/api/govex/collab?action=threads").then(function (j) {
+        if (!j || j.ok === false) { err((j && j.error) || "?"); return; }
+        var ts = j.threads || [];
+        var h = '<div class="dw-meta">共 ' + ts.length + " 个线程</div>";
+        ts.forEach(function (t) {
+          var id = t.id || t.thread || t.name || "";
+          var title = t.title || t.subject || t.name || id;
+          var cnt = t.posts != null ? t.posts : (t.count != null ? t.count : "");
+          h += '<div class="hit" data-thread="' + esc(String(id)) + '" style="cursor:pointer">🧵 <b>' + esc(String(title).slice(0, 70)) + '</b>' +
+            (cnt !== "" ? " · " + cnt + " 帖" : "") + '</div>';
+        });
+        if (!ts.length) h += '<div class="dw-meta">（还没有线程 —— CLI: org govex collab post …）</div>';
+        out.innerHTML = h;
+        var rows = out.querySelectorAll(".hit[data-thread]");
+        for (var i = 0; i < rows.length; i++) {
+          (function (row) {
+            row.onclick = function () { openFeed(row.getAttribute("data-thread"), row.textContent.slice(2, 42)); };
+          })(rows[i]);
+        }
+      }).catch(function (e) { err(String(e)); });
+    } else if (a === "users") {
+      api("/api/govex/collab?action=users").then(function (j) {
+        if (!j || j.ok === false) { err((j && j.error) || "?"); return; }
+        var us = j.collaborators || [];
+        var h = '<div class="dw-meta">' + us.length + " 位协作者</div>";
+        us.forEach(function (u) {
+          var name = (typeof u === "string") ? u : (u.name || u.user || u.id || JSON.stringify(u));
+          h += '<div class="hit">👤 ' + esc(String(name)) + (u && u.kind ? " · " + esc(u.kind) : "") + '</div>';
+        });
+        if (!us.length) h += '<div class="dw-meta">（暂无协作者）</div>';
+        out.innerHTML = h;
+      }).catch(function (e) { err(String(e)); });
+    } else {
+      api("/api/govex/collab?action=summary").then(function (j) {
+        if (!j || j.ok === false) { err((j && j.error) || "?"); return; }
+        var h = "";
+        var me = j.me || j.whoami || j.current || null;
+        if (me) h += '<div class="dw-meta">我：' + esc(typeof me === "string" ? me : (me.name || me.user || JSON.stringify(me))) + '</div>';
+        ["threads", "posts", "users", "collaborators", "updated"].forEach(function (k) {
+          if (j[k] != null && typeof j[k] !== "object") h += '<div class="dw-meta">' + k + ": " + esc(String(j[k])) + '</div>';
+        });
+        if (j.summary && typeof j.summary === "object") {
+          Object.keys(j.summary).slice(0, 10).forEach(function (k) {
+            var v = j.summary[k];
+            if (v == null || typeof v === "object") return;
+            h += '<div class="dw-meta">' + esc(k) + ": " + esc(String(v)) + '</div>';
+          });
+        }
+        h += '<div class="dw-meta">协作目录：' + esc(j.dir || "runtime/collab/") + '</div>';
+        out.innerHTML = h || '<div class="dw-meta">（协作空间为空）</div>';
+      }).catch(function (e) { err(String(e)); });
+    }
+  }
+  $("cbTabs").addEventListener("click", function (ev) {
+    var a = ev.target && ev.target.getAttribute ? ev.target.getAttribute("data-a") : null;
+    if (a) go(a);
+  });
+  go("summary");
 }
 function cloudPanel() {
   $("dwBody").innerHTML = '<button class="mini" id="cloudGo">▶ 探测云工具链</button><div id="cloudOut" style="margin-top:10px"></div>';
