@@ -104,6 +104,7 @@ import { configPath, loadConfig, setConfigValue, unsetConfigValue, applyPreset,
          effectiveValue, applyConfigToEnv, CONFIG_KEYS, PRESETS, maskSecret,
          normalizeKey, setLaneValue, removeLane, useLane, addApiKey, autoFromEnv,
          type LaneConfig } from "../lib/config.ts"; // 用户模型/API 配置（v0.4.16）
+import { checkPlagiarism } from "../lib/plagiarism.ts"; // v0.5.46：原创性/查重自检（F3 前置件 · 三端可复用）
 import { PROVIDERS, PROVIDER_NAMES, discoverEnvLanes, resolveModelFlag,
          providerRows, testLane, type ProviderRow } from "../lib/providers.ts"; // 服务商注册表与车道解析（v0.5.1）
 import { prepareLlmEnv, readLedger, activeRouter, poolView, budgetWatermark, type LedgerStats } from "../lib/router.ts"; // 本地路由器（v0.5.1 · 池状态/预算水位 v0.5.5）
@@ -203,6 +204,8 @@ interface Args {
   k: number;              // v0.5.8：org search --k（top-N 命中数）
   priority: number;       // v0.5.35：org task submit --priority 0-10（CLI 面补齐；此前幽灵访问恒 5）
   rest: string[];
+  refs: string[];         // v0.5.46：org plag --ref 参考语料（可重复）
+  json: boolean;          // v0.5.46：org plag --json（结构化输出）
 }
 
 function parseArgs(argv: string[]): Args {
@@ -237,6 +240,8 @@ function parseArgs(argv: string[]): Args {
     k: 5,
     priority: 5,
     rest: [],
+    refs: [],
+    json: false,
   };
   let i = 1;
   while (i < argv.length) {
@@ -281,6 +286,8 @@ function parseArgs(argv: string[]): Args {
     else if (v === "--all" || v === "--yes") a.reviewAll = true;
     else if (v === "--none") a.reviewNone = true;
     else if (v === "--dry-run") a.dryRun = true;
+    else if (v === "--ref") a.refs.push(argv[++i] ?? "");
+    else if (v === "--json") a.json = true;
     else a.rest.push(v);
     i++;
   }
@@ -1995,6 +2002,36 @@ async function cmdSchedule(a: Args): Promise<number> {
 
 // ---- org search：语义检索（v0.5.8 · capabilities #19/#22） ---------------------
 
+/** org plag <文件> --ref <参考> [--ref 更多] [--json] —— 原创性/查重自检（v0.5.46 · F3 前置件）。 */
+async function cmdPlag(a: Args): Promise<number> {
+  const file = a.rest[0] ?? "";
+  if (!file) {
+    console.error("用法：org plag <样本文件> --ref <参考文件> [--ref 更多…] [--json]");
+    console.error("  7 字滑窗 + LCS 相似度；≥0.8 近逐字 / ≥0.6 高度相似");
+    console.error("  判定：命中率 >12% 不合格 · >6% 擦边 · 否则通过（与歌曲测试探针同口径）");
+    return 2;
+  }
+  if (a.refs.length === 0) {
+    console.error("✗ 至少一个 --ref 参考文件（可重复指定）");
+    return 2;
+  }
+  const r = checkPlagiarism(path.resolve(file), a.refs.map((x) => path.resolve(x)));
+  if (a.json) {
+    console.log(JSON.stringify(r, null, 2));
+    return r.verdict === "fail" ? 1 : 0;
+  }
+  console.log(`🔬 查重：${r.file} · 滑窗 ${r.windows}`);
+  for (const rr of r.refs) {
+    const mark = rr.hit80 > 0 ? "✗" : rr.hits > 0 ? "~" : "✓";
+    console.log(`  ${mark} ${rr.name}: 命中 ${rr.hits}（近逐字 ${rr.hit80} · ${rr.pct}%）`);
+    for (const sp of rr.samples.slice(0, 6)) {
+      console.log(`      [${sp.ratio}] 「${sp.window}」 ~ 「${sp.refWindow}」`);
+    }
+  }
+  console.log(`判定：${r.verdict === "pass" ? "通过 ✓" : r.verdict === "borderline" ? "擦边 ~" : "不合格 ✗"} —— ${r.summary}`);
+  return r.verdict === "fail" ? 1 : 0;
+}
+
 async function cmdSearch(a: Args): Promise<number> {
   const query = a.rest.join(" ").trim();
   if (!query) {
@@ -3314,6 +3351,7 @@ async function cmdRetest(a: Args): Promise<number> {
     console.error("用法：");
     console.error("  org retest plan [--file 模式] [--name 子串] [--failed-only]   生成重跑计划（只读，不执行）");
     console.error("  org retest run  [--file 模式] [--name 子串] [--failed-only]   执行重跑并记入 flaky 台账");
+    console.error("  org plag <文件> --ref <参考> [--ref 更多] [--json]              原创性/查重自检（7 字滑窗 + LCS）");
     console.error(`  ${retestGuidance()}`);
     return 2;
   };
@@ -4971,6 +5009,8 @@ export async function orgMain(): Promise<number> {
     case "spawn-decide": case "spawndecide": return cmdSpawnDecide(a);
     // v0.5.22 能力批 B（#146 SAST + #65 依赖管理 + #104 选择性重跑）
     case "sast": return cmdSast(a);
+    // v0.5.46 原创性/查重自检（F3 前置件 —— 歌曲测试探针产品化）
+    case "plag": case "plagiarism": return cmdPlag(a);
     case "deps": case "dep": return cmdDeps(a);
     case "retest": return cmdRetest(a);
     case "devtools": return cmdDevtools(a);
