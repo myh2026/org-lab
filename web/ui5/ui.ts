@@ -966,6 +966,9 @@ var TOOLS = [
   { id: "voice", name: "语音工坊", sub: "transcribeAudio / synthesizeSpeech —— 转写 + 朗读", run: "voicePanel" },
   { id: "mobile", name: "移动端", sub: "probeMobile/mobileDevices —— 工具探测 + 设备清单", run: "mobilePanel" },
   { id: "remote", name: "远程 Agent", sub: "probeRemote/remoteHosts —— ssh 工具链 + 主机档案", run: "remotePanel" },
+  { id: "plugins", name: "插件", sub: "pluginList —— .org/plugins 清单（只读面）", run: "pluginsPanel" },
+  { id: "rbac", name: "RBAC", sub: "loadRbac —— 角色与动作矩阵（只读面）", run: "rbacPanel" },
+  { id: "engines", name: "浏览器引擎", sub: "browserEngines —— agent-browser/chromium/chrome 探测", run: "enginesPanel" },
 ];
 function renderTools() {
   var el = $("lstTools"); el.innerHTML = "";
@@ -1794,6 +1797,69 @@ function remotePanel() {
     if (a) go(a);
   });
   go("probe");
+}
+function pluginsPanel() {
+  $("dwBody").innerHTML = '<button class="mini" id="plGo">▶ 加载插件清单</button><div id="plOut" style="margin-top:10px"></div>';
+  function err(e) { $("plOut").innerHTML = '<div class="dw-meta">失败：' + esc(e) + '</div>'; }
+  $("plGo").onclick = function () {
+    $("plOut").innerHTML = '<div class="dw-meta">加载中…</div>';
+    api("/api/govex/plugins").then(function (j) {
+      if (!j || j.ok === false) { err((j && j.error) || "?"); return; }
+      var ps = j.plugins || [];
+      var h = '<div class="dw-meta">目录 ' + esc(j.dir || ".org/plugins") + " · " + ps.length + ' 个插件</div>';
+      ps.forEach(function (x) {
+        h += '<div class="hit">🔌 <b>' + esc(x.name || "?") + '</b>' + (x.version ? "@" + esc(x.version) : "") +
+          (x.path ? " · " + esc(x.path) : "") + (x.description ? '<br><span class="dw-meta">' + esc(String(x.description).slice(0, 100)) + "</span>" : "") + '</div>';
+      });
+      if (!ps.length) h += '<div class="dw-meta">（无插件 —— CLI: org plugin install <source>）</div>';
+      $("plOut").innerHTML = h;
+    }).catch(function (e) { err(String(e)); });
+  };
+}
+function rbacPanel() {
+  $("dwBody").innerHTML = '<button class="mini" id="rbGo">▶ 加载角色矩阵</button><div id="rbOut" style="margin-top:10px"></div>';
+  function err(e) { $("rbOut").innerHTML = '<div class="dw-meta">失败：' + esc(e) + '</div>'; }
+  $("rbGo").onclick = function () {
+    $("rbOut").innerHTML = '<div class="dw-meta">加载中…</div>';
+    api("/api/govex/rbac").then(function (j) {
+      if (!j || j.ok === false) { err((j && j.error) || "?"); return; }
+      var h = '<div class="dw-meta">策略 ' + esc(j.policy_file || "（缺省内建）") +
+        (j.fallback_reason ? " · 回落：" + esc(String(j.fallback_reason).slice(0, 80)) : "") + '</div>';
+      (j.roles || []).forEach(function (r) {
+        var bits = [];
+        Object.keys(r).forEach(function (k) {
+          if (k === "role") return;
+          var v = r[k];
+          if (v == null) return;
+          if (Array.isArray(v)) { if (v.length) bits.push(k + "[" + v.length + "]"); }
+          else if (typeof v === "boolean") { bits.push(k + ":" + (v ? "✓" : "✗")); }
+          else if (typeof v !== "object") { bits.push(k + ":" + String(v).slice(0, 30)); }
+        });
+        h += '<div class="hit">🎭 <b>' + esc(r.role || "?") + '</b> · ' + esc(bits.join(" · ").slice(0, 150)) + '</div>';
+      });
+      if (!(j.roles || []).length) h += '<div class="dw-meta">（无策略角色）</div>';
+      $("rbOut").innerHTML = h;
+    }).catch(function (e) { err(String(e)); });
+  };
+}
+function enginesPanel() {
+  $("dwBody").innerHTML = '<button class="mini" id="enGo">▶ 探测浏览器引擎</button><div id="enOut" style="margin-top:10px"></div>';
+  function err(e) { $("enOut").innerHTML = '<div class="dw-meta">失败：' + esc(e) + '</div>'; }
+  $("enGo").onclick = function () {
+    $("enOut").innerHTML = '<div class="dw-meta">探测中…</div>';
+    api("/api/govex/engines").then(function (j) {
+      if (!j || j.ok === false) { err((j && j.error) || "?"); return; }
+      var h = "";
+      [["agent-browser", j.agent_browser], ["chromium", j.chromium], ["chrome", j.chrome]].forEach(function (pair) {
+        var f = pair[1];
+        var avail = (f === true) || (f && f.available === true);
+        var ver = (f && (f.version || f.path)) ? String(f.version || f.path).slice(0, 60) : "";
+        h += '<div class="hit">' + (avail ? "✓" : "⬜") + " <b>" + esc(pair[0]) + '</b>' + (ver ? " · " + esc(ver) : "") + '</div>';
+      });
+      if (j.hint) h += '<div class="dw-meta">' + esc(String(j.hint).slice(0, 160)) + '</div>';
+      $("enOut").innerHTML = h;
+    }).catch(function (e) { err(String(e)); });
+  };
 }
 function cloudPanel() {
   $("dwBody").innerHTML = '<button class="mini" id="cloudGo">▶ 探测云工具链</button><div id="cloudOut" style="margin-top:10px"></div>';
