@@ -161,6 +161,9 @@ button.mini:hover { color:var(--tx); background:var(--bg3); }
 #dwBody { flex:1; overflow-y:auto; padding:12px 14px; min-height:0; }
 .tool { display:block; width:100%; text-align:left; padding:8px 10px; border:1px solid var(--ln); border-radius:var(--r2);
   margin-bottom:6px; color:var(--tx2); background:var(--bg2); }
+.toolf { display:block; width:100%; background:var(--bg2); border:1px solid var(--ln); border-radius:var(--r2);
+  padding:6px 9px; color:var(--tx); font:var(--fs-sm) var(--sans); }
+.toolf:focus { border-color:var(--ln2); outline:none; }
 .tool:hover { border-color:var(--ln2); color:var(--tx); }
 .tool b { color:var(--tx); }
 .tool .sub { display:block; color:var(--tx3); font-size:var(--fs-xs); margin-top:2px; }
@@ -290,6 +293,7 @@ select.chip option { background:var(--bg2); color:var(--tx); }
     </div>
     <div class="sec" id="secTools">
       <div class="shead">工具箱 <span class="cnt" id="cntTools"></span></div>
+      <div style="padding:0 8px 6px"><input id="toolFilter" class="toolf" placeholder="过滤面板（如 扫描 / PDF / 记忆）…" autocomplete="off"></div>
       <div class="slist" id="lstTools"></div>
     </div>
     <div class="sec" id="secRuns">
@@ -884,8 +888,12 @@ var TOOLS = [
 ];
 function renderTools() {
   var el = $("lstTools"); el.innerHTML = "";
-  $("cntTools").textContent = String(TOOLS.length);
-  TOOLS.forEach(function (t) {
+  var q = ($("toolFilter").value || "").trim().toLowerCase();
+  var list = q ? TOOLS.filter(function (t) {
+    return (t.name + " " + t.id + " " + t.sub).toLowerCase().indexOf(q) >= 0;
+  }) : TOOLS;
+  $("cntTools").textContent = q ? list.length + "/" + TOOLS.length : String(TOOLS.length);
+  list.forEach(function (t) {
     var b = document.createElement("button");
     b.className = "tool";
     b.innerHTML = "<b>" + esc(t.name) + "</b><span class='sub'>" + esc(t.sub) + "</span>";
@@ -1607,6 +1615,7 @@ $("rbTasks").onclick = function () { switchSec("tasks"); };
 $("rbAbout").onclick = function () { showAbout(); };
 $("rbTools").onclick = function () { switchSec("tools"); };
 $("dwClose").onclick = closeDrawer;
+$("toolFilter").addEventListener("input", renderTools);
 $("newAsk").onclick = function () { state.currentSession = null; renderSessions(); crumb(); clearStream(); renderEmpty(); hint("新会话"); };
 $("chipMode").onclick = function () {
   state.mode = state.mode === "team" ? "direct" : "team";

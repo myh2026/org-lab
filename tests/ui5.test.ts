@@ -15,7 +15,7 @@ describe("UI v5 骨架冒烟（ORG_WEB_UI=v5 轨）", () => {
       "newAsk", "lstExp", "lstSes", "lstRuns", "lstTasks",
       "chipMode", "chipLane", "chipAppr", "inp", 'id="send"', 'id="stop"',
       "sbCtx", "sbTok", "sbLane", "sbState", 'id="appr"', "streamCol",
-      "rbTools", "secTools", "lstTools", 'id="drawer"', "dwBody", "dwClose",
+      "rbTools", "secTools", "lstTools", "toolFilter", 'id="drawer"', "dwBody", "dwClose",
     ];
     const miss = anchors.filter((k) => !page.includes(k));
     if (miss.length) console.error("缺失锚点:", miss.join(", "));
