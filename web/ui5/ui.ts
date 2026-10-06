@@ -69,7 +69,7 @@ input,textarea,select { font-family:var(--sans); color:var(--tx); background:non
 /* ── v5 · 布局 ──────────────────────────────────────────────────────────── */
 #app { display:grid; grid-template-columns:56px 280px 1fr; grid-template-rows:1fr 28px;
   height:calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom)); }
-#rail { grid-row:1; border-right:1px solid var(--ln); background:var(--bg1);
+#rail { grid-row:1; grid-column:1; border-right:1px solid var(--ln); background:var(--bg1);
   display:flex; flex-direction:column; align-items:center; gap:6px; padding:10px 0; }
 #rail .rgrow { flex:1; }
 .rb { width:40px; height:40px; border-radius:var(--r2); display:flex; align-items:center;
@@ -78,7 +78,7 @@ input,textarea,select { font-family:var(--sans); color:var(--tx); background:non
 .rb.on { background:var(--ac-bg); color:var(--ac); }
 .rb svg { width:19px; height:19px; stroke:currentColor; fill:none; stroke-width:1.7;
   stroke-linecap:round; stroke-linejoin:round; }
-#side { grid-row:1; border-right:1px solid var(--ln); background:var(--bg1);
+#side { grid-row:1; grid-column:2; border-right:1px solid var(--ln); background:var(--bg1);
   display:flex; flex-direction:column; min-height:0; }
 .sec { display:none; flex-direction:column; min-height:0; flex:1; }
 .sec.on { display:flex; }
@@ -101,7 +101,7 @@ input,textarea,select { font-family:var(--sans); color:var(--tx); background:non
 #newAsk:hover { border-color:var(--ac); color:var(--ac); }
 
 /* ── v5 · 主列 ──────────────────────────────────────────────────────────── */
-#main { grid-row:1; display:flex; flex-direction:column; min-width:0; min-height:0;
+#main { grid-row:1; grid-column:3; display:flex; flex-direction:column; min-width:0; min-height:0;
   background:var(--bg0); }
 #top { flex:none; height:44px; display:flex; align-items:center; gap:var(--sp3);
   padding:0 18px; border-bottom:1px solid var(--ln); }
@@ -268,9 +268,15 @@ select.chip option { background:var(--bg2); color:var(--tx); }
 @media (max-width:1023px) {
   #app { grid-template-columns:56px 0 1fr; }
   #side { position:fixed; left:56px; top:0; bottom:28px; width:280px; z-index:20;
-    transform:translateX(-110%); transition:transform 180ms var(--ease-drawer);
-    border-right:1px solid var(--ln2); box-shadow:var(--sh); }
+    transform:translateX(calc(-100% - 60px)); transition:transform 180ms var(--ease-drawer);
+    border-right:1px solid var(--ln2); box-shadow:var(--sh);
+    padding-top: env(safe-area-inset-top); }
   #side.open { transform:none; }
+  #drawer { width:calc(100vw - 56px); max-width:600px; }
+  #top { padding:0 10px; }
+  #comp { padding:4px 10px 12px; }
+  #appr { padding:0 10px; }
+  .col { padding:0 10px; }
 }
 @media (prefers-reduced-motion:reduce) {
   * { transition:none !important; animation:none !important; }
@@ -627,10 +633,12 @@ function deleteSession(name, btn) {
   }, 4200);
 }
 function selectExpert(name) {
+  if (isNarrow()) closeSide();
   state.currentExpert = name; state.currentSession = null;
   renderExperts(); loadSessions(); crumb();
 }
 function openSession(sess) {
+  if (isNarrow()) closeSide();
   if (!state.currentExpert) return;
   state.currentSession = sess; renderSessions(); crumb();
   api("/api/session/" + encodeURIComponent(state.currentExpert) + "/" + encodeURIComponent(sess))
@@ -850,6 +858,14 @@ function autoGrow() {
 }
 
 /* ---- rail / about ---- */
+/* v5 · 移动/平板断点（<1024）：侧栏抽屉化 —— rail 再点当前区切换开合 */
+function isNarrow() { return !!(window.matchMedia && window.matchMedia("(max-width:1023px)").matches); }
+function closeSide() { var side = $("side"); if (side) side.classList.remove("open"); }
+function railTap(sec) {
+  if (isNarrow() && state.sec === sec && $("side").classList.contains("open")) { closeSide(); return; }
+  switchSec(sec);
+  if (isNarrow()) $("side").classList.add("open");
+}
 function switchSec(sec) {
   ["chat", "runs", "tasks", "tools"].forEach(function (s) {
     $("sec" + s.charAt(0).toUpperCase() + s.slice(1)).className = "sec" + (s === sec ? " on" : "");
@@ -857,6 +873,7 @@ function switchSec(sec) {
   ["rbChat", "rbRuns", "rbTasks", "rbTools"].forEach(function (id) {
     $(id).className = "rb" + (id === "rb" + sec.charAt(0).toUpperCase() + sec.slice(1) ? " on" : "");
   });
+  state.sec = sec;
   if (sec === "runs") renderRuns();
   if (sec === "tasks") renderTasks();
   if (sec === "tools") renderTools();
@@ -1675,11 +1692,11 @@ function loadProviders() {
 }
 
 /* ---- 交互接线 ---- */
-$("rbChat").onclick = function () { switchSec("chat"); };
-$("rbRuns").onclick = function () { switchSec("runs"); };
-$("rbTasks").onclick = function () { switchSec("tasks"); };
+$("rbChat").onclick = function () { railTap("chat"); };
+$("rbRuns").onclick = function () { railTap("runs"); };
+$("rbTasks").onclick = function () { railTap("tasks"); };
 $("rbAbout").onclick = function () { showAbout(); };
-$("rbTools").onclick = function () { switchSec("tools"); };
+$("rbTools").onclick = function () { railTap("tools"); };
 $("dwClose").onclick = closeDrawer;
 $("toolFilter").addEventListener("input", renderTools);
 $("newAsk").onclick = function () { state.currentSession = null; renderSessions(); crumb(); clearStream(); renderEmpty(); hint("新会话"); };
@@ -1702,7 +1719,13 @@ $("inp").addEventListener("keydown", function (e) {
 document.addEventListener("keydown", function (e) {
   if (e.key !== "Escape") return;
   if (!$("drawer").hidden) { closeDrawer(); return; }
+  if (isNarrow() && $("side").classList.contains("open")) { closeSide(); return; }
   if (state.running) abortRun();
+});
+document.addEventListener("click", function (ev) {
+  if (!isNarrow()) return;
+  var side = $("side"), rail = $("rail");
+  if (side.classList.contains("open") && !side.contains(ev.target) && !rail.contains(ev.target)) closeSide();
 });
 
 /* ---- boot ---- */
