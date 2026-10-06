@@ -837,6 +837,16 @@ export function startWebServer(opts: { workspace: string; port: number; host?: s
             headers: { "content-type": "text/html; charset=utf-8" },
           });
         }
+        // PWA 主屏安装（iPad「添加到主屏幕」）：专属图标直通
+        if (route === "GET /apple-touch-icon.png" || route === "GET /favicon.ico") {
+          const iconPath = path.join(ROOT, "web", "apple-touch-icon.png");
+          if (fs.existsSync(iconPath)) {
+            return new Response(Bun.file(iconPath), {
+              headers: { "content-type": "image/png", "cache-control": "max-age=86400" },
+            });
+          }
+          return new Response("", { status: 404 });
+        }
         // ---- 停止/取消（issue #12：运行轮 SIGKILL；v0.4.14：排队轮可预取消）----
         if (route === "POST /api/abort") {
           // 可选 body {id}：票据 id（SSE open 事件回显）。无 body / 无 id →

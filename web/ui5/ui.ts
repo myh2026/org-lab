@@ -23,7 +23,14 @@ export function renderV5Page(): string {
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0c0e">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="icon" type="image/png" href="/apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="org">
 <title>org · console</title>
 <style>
 /* ── v5 · tokens ────────────────────────────────────────────────────────── */
@@ -44,7 +51,8 @@ export function renderV5Page(): string {
 * { box-sizing:border-box; margin:0; padding:0; }
 html,body { height:100%; }
 body { background:var(--bg0); color:var(--tx); font:var(--fs-base)/1.6 var(--sans);
-  overflow:hidden; -webkit-font-smoothing:antialiased; }
+  overflow:hidden; -webkit-font-smoothing:antialiased;
+  padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
 ::selection { background:var(--ac); color:#0b0c0e; }
 ::-webkit-scrollbar { width:9px; height:9px; }
 ::-webkit-scrollbar-thumb { background:rgba(255,255,255,.13); border-radius:99px;
@@ -60,7 +68,7 @@ input,textarea,select { font-family:var(--sans); color:var(--tx); background:non
 
 /* ── v5 · 布局 ──────────────────────────────────────────────────────────── */
 #app { display:grid; grid-template-columns:56px 280px 1fr; grid-template-rows:1fr 28px;
-  height:100vh; }
+  height:calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom)); }
 #rail { grid-row:1; border-right:1px solid var(--ln); background:var(--bg1);
   display:flex; flex-direction:column; align-items:center; gap:6px; padding:10px 0; }
 #rail .rgrow { flex:1; }
