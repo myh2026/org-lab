@@ -42,6 +42,38 @@ describe("UI v5 骨架冒烟（ORG_WEB_UI=v5 轨）", () => {
     expect(() => new Function(m![1])).not.toThrow();
   });
 
+  test("工具箱注册表对齐：26 卡 · run 指向的函数全部定义", () => {
+    const m = page.match(/var TOOLS = \[([\s\S]*?)\];/);
+    expect(m).not.toBeNull();
+    const runs = m![1].match(/run: "([A-Za-z]+)"/g) || [];
+    expect(runs.length).toBe(26);
+    for (const r of runs) {
+      const fn = r.match(/run: "([A-Za-z]+)"/)![1];
+      if (!page.includes("function " + fn)) console.error("缺函数:", fn);
+      expect(page.includes("function " + fn)).toBe(true);
+    }
+  });
+
+  test("API 消费面矩阵：34 端点在手（S3 换轨筹备）", () => {
+    const eps = [
+      "/api/status", "/api/runs", "/api/run-stream", "/api/ask-stream", "/api/abort",
+      "/api/sessions", "/api/session/", "/api/providers", "/api/providers/test",
+      "/api/approvals", "/api/audio-compose", 
+      "/api/toolbox/scan", "/api/toolbox/symbols", "/api/toolbox/sbom", "/api/toolbox/db",
+      "/api/toolbox/diff", "/api/toolbox/pdfread", "/api/toolbox/review",
+      "/api/govex/mcp", "/api/govex/sast", "/api/govex/iacscan", "/api/govex/gitstate",
+      "/api/govex/deps", "/api/govex/debug", "/api/govex/cloud", "/api/govex/retest",
+      "/api/govex/collab", "/api/govex/tracker", "/api/spawns",
+      "/api/search", "/api/memory", "/api/schedules", "/api/notifications",
+      "/api/vision", "/api/asr", "/api/tts",
+    ];
+    // 注：音频直通链接（/api/audio?…）由服务端响应动态给出，不在页面字面量中
+    const fixed = eps.concat(["/api/cost"]);
+    const miss = fixed.filter(function (e) { return !page.includes(e); });
+    if (miss.length) console.error("缺端点:", miss.join(", "));
+    expect(miss.length).toBe(0);
+  });
+
   test("模板体量 sanity（曾蒸发/截断事故 → 下限防御）", () => {
     expect(page.length).toBeGreaterThan(36000);
     expect(page.includes("org · console")).toBe(true);
