@@ -29,7 +29,7 @@ describe("UI v5 骨架冒烟（ORG_WEB_UI=v5 轨）", () => {
       "function renderSessions", "function renameSession", "function deleteSession",
       "function refreshApprovals", "function renderSb", "function replayRun",
       "function renderTools", "function openDrawer", "function closeDrawer",
-      "function scanPanel", "function symbolsPanel", "function sbomPanel", "function dbPanel", "function diffPanel", "function pdfPanel", "function mcpPanel", "function sastPanel", "function iacPanel", "function gitPanel", "function depsPanel", "function debugPanel", "function cloudPanel", "function retestPanel", "function spawnsPanel", "function reviewPanel", "function trackerPanel", "function providersPanel", "function audioPanel", "function searchPanel", "function memoryPanel", "function submitTaskNow", "function taskAction", "function schedPanel", "function notifyPanel", "function collabPanel", "function visionPanel", "function voicePanel", "function mobilePanel", "function remotePanel", "function pluginsPanel", "function rbacPanel", "function enginesPanel", "function snapshotPanel",
+      "function scanPanel", "function symbolsPanel", "function sbomPanel", "function dbPanel", "function diffPanel", "function pdfPanel", "function mcpPanel", "function sastPanel", "function iacPanel", "function gitPanel", "function depsPanel", "function debugPanel", "function cloudPanel", "function retestPanel", "function spawnsPanel", "function reviewPanel", "function trackerPanel", "function providersPanel", "function audioPanel", "function searchPanel", "function memoryPanel", "function submitTaskNow", "function taskAction", "function schedPanel", "function notifyPanel", "function collabPanel", "function visionPanel", "function voicePanel", "function mobilePanel", "function remotePanel", "function pluginsPanel", "function rbacPanel", "function enginesPanel", "function snapshotPanel", "function openapiPanel", "function lspPanel", "function dbdiagPanel",
     ];
     const miss = fns.filter((k) => !page.includes(k));
     if (miss.length) console.error("缺失函数:", miss.join(", "));
@@ -46,7 +46,7 @@ describe("UI v5 骨架冒烟（ORG_WEB_UI=v5 轨）", () => {
     const m = page.match(/var TOOLS = \[([\s\S]*?)\];/);
     expect(m).not.toBeNull();
     const runs = m![1].match(/run: "([A-Za-z]+)"/g) || [];
-    expect(runs.length).toBe(32);
+    expect(runs.length).toBe(35);
     for (const r of runs) {
       const fn = r.match(/run: "([A-Za-z]+)"/)![1];
       if (!page.includes("function " + fn)) console.error("缺函数:", fn);

@@ -970,6 +970,9 @@ var TOOLS = [
   { id: "rbac", name: "RBAC", sub: "loadRbac —— 角色与动作矩阵（只读面）", run: "rbacPanel" },
   { id: "engines", name: "浏览器引擎", sub: "browserEngines —— agent-browser/chromium/chrome 探测", run: "enginesPanel" },
   { id: "snapshot", name: "网页快照", sub: "browserSnapshot —— 输入 URL → 标题/正文/链接（真浏览器）", run: "snapshotPanel" },
+  { id: "openapi", name: "OpenAPI 解析", sub: "parseOpenApi —— spec → 操作清单 + 工具名建议", run: "openapiPanel" },
+  { id: "lsp", name: "LSP 符号", sub: "lspDefinition/References/Hover —— 定义/引用/悬停", run: "lspPanel" },
+  { id: "dbdiag", name: "SQL 诊断", sub: "dbDiagnose —— 查询计划 + 优化建议", run: "dbdiagPanel" },
 ];
 function renderTools() {
   var el = $("lstTools"); el.innerHTML = "";
@@ -1893,6 +1896,82 @@ function snapshotPanel() {
   $("snGo").onclick = go;
   $("snUrl").addEventListener("keydown", function (e) { if (e.key === "Enter") go(); });
   $("snUrl").focus();
+}
+function openapiPanel() {
+  $("dwBody").innerHTML = '<textarea class="dw-ta" id="oaText" placeholder="粘贴 OpenAPI spec JSON…（或下方给工作区文件路径）"></textarea>' +
+    '<div class="dw-form"><input id="oaFile" placeholder="或：工作区相对路径（如 spec.json）" autocomplete="off"><button id="oaGo">解析</button></div><div id="oaOut"></div>';
+  function err(e) { $("oaOut").innerHTML = '<div class="dw-meta">失败：' + esc(e) + '</div>'; }
+  $("oaGo").onclick = function () {
+    var text = $("oaText").value.trim(), file = $("oaFile").value.trim();
+    if (!text && !file) { err("粘贴 spec 或给文件路径（二选一）"); return; }
+    $("oaOut").innerHTML = '<div class="dw-meta">解析中…</div>';
+    api("/api/govex/openapi", text ? { text: text } : { file: file }).then(function (j) {
+      if (!j || j.ok === false) { err((j && j.kind ? "[" + j.kind + "] " : "") + ((j && j.error) || "?")); return; }
+      var info = j.info || {};
+      var h = '<div class="dw-meta">v' + esc(j.version || "?") + (info.title ? " · " + esc(info.title) : "") +
+        (info.version ? " " + esc(info.version) : "") + " · 服务器 " + ((j.servers || []).length) + " · 操作 " + ((j.operations || []).length) + '</div>';
+      (j.operations || []).slice(0, 60).forEach(function (op) {
+        h += '<div class="hit"><b>' + esc(String(op.method || "?").toUpperCase()) + '</b> <span class="f">' + esc(op.path || "?") +
+          '</span> → <code>' + esc(op.tool_name || "") + '</code>' + (op.operationId ? " · " + esc(op.operationId) : "") + '</div>';
+      });
+      $("oaOut").innerHTML = h;
+    }).catch(function (e) { err(String(e)); });
+  };
+}
+function lspPanel() {
+  $("dwBody").innerHTML = '<div class="dw-form"><input id="lspName" placeholder="符号名（如 scanSecrets）" autocomplete="off"><button id="lspDef">定义</button><button id="lspRef">引用</button><button id="lspHov">悬停</button></div><div id="lspOut"></div>';
+  var out = $("lspOut");
+  function err(e) { out.innerHTML = '<div class="dw-meta">失败：' + esc(e) + '</div>'; }
+  function call(a) {
+    var name = $("lspName").value.trim();
+    if (!name) { err("先输入符号名"); return; }
+    out.innerHTML = '<div class="dw-meta">查询中…（' + a + '）</div>';
+    api("/api/govex/lsp?action=" + a + "&name=" + encodeURIComponent(name)).then(function (j) {
+      if (!j || j.ok === false) { err((j && j.error) || (j && j.reason) || "?"); return; }
+      var h = '<div class="dw-meta">车道 ' + esc(j.lane || "?") + (j.reason ? " · " + esc(String(j.reason).slice(0, 90)) : "") + '</div>';
+      if (a === "definition") {
+        (j.definitions || []).forEach(function (d) {
+          h += '<div class="hit"><span class="f">' + esc(d.file || "?") + ":" + (d.line != null ? d.line : "?") + '</span> ' + esc(d.name || "") + '</div>';
+        });
+        if (!(j.definitions || []).length) h += '<div class="dw-meta">无定义命中</div>';
+      } else if (a === "references") {
+        h += '<div class="dw-meta">引用 ' + ((j.refs || []).length) + (j.truncated ? "（截断）" : "") + '</div>';
+        (j.refs || []).slice(0, 60).forEach(function (r2) {
+          h += '<div class="hit"><span class="f">' + esc(r2.file || "?") + ":" + (r2.line != null ? r2.line : "?") + '</span> ' + esc(String(r2.text || "").slice(0, 80)) + '</div>';
+        });
+      } else {
+        h += '<pre class="dw-pre">' + esc(String(j.hover || "（无悬停信息）").slice(0, 3000)) + '</pre>';
+      }
+      out.innerHTML = h;
+    }).catch(function (e) { err(String(e)); });
+  }
+  $("lspDef").onclick = function () { call("definition"); };
+  $("lspRef").onclick = function () { call("references"); };
+  $("lspHov").onclick = function () { call("hover"); };
+  $("lspName").focus();
+}
+function dbdiagPanel() {
+  $("dwBody").innerHTML = '<div class="dw-form"><input id="ddFile" placeholder="库文件（工作区相对路径，或 :memory:）" autocomplete="off"></div>' +
+    '<textarea class="dw-ta" id="ddSql" placeholder="SQL（要诊断的查询）…"></textarea>' +
+    '<div class="dw-form"><button id="ddGo">诊断</button></div><div id="ddOut"></div>';
+  function err(e) { $("ddOut").innerHTML = '<div class="dw-meta">失败：' + esc(e) + '</div>'; }
+  $("ddGo").onclick = function () {
+    var f = $("ddFile").value.trim(), sql = $("ddSql").value.trim();
+    if (!f || !sql) { err("库文件与 SQL 都要填"); return; }
+    $("ddOut").innerHTML = '<div class="dw-meta">诊断中…</div>';
+    api("/api/govex/dbdiag", { file: f, sql: sql }).then(function (j) {
+      if (!j || j.ok === false) { err((j && j.kind ? "[" + j.kind + "] " : "") + ((j && j.error) || "?")); return; }
+      var h = '<div class="dw-meta">' + (j.ms || 0) + 'ms</div>';
+      var plan = j.plan;
+      h += '<div class="dw-meta">查询计划：</div><pre class="dw-pre">' +
+        esc(typeof plan === "string" ? plan.slice(0, 6000) : JSON.stringify(plan, null, 1).slice(0, 6000)) + '</pre>';
+      (j.suggestions || []).forEach(function (sg) {
+        h += '<div class="hit">💡 ' + esc(typeof sg === "string" ? sg : JSON.stringify(sg).slice(0, 140)) + '</div>';
+      });
+      if (!(j.suggestions || []).length) h += '<div class="dw-meta">（无优化建议）</div>';
+      $("ddOut").innerHTML = h;
+    }).catch(function (e) { err(String(e)); });
+  };
 }
 function cloudPanel() {
   $("dwBody").innerHTML = '<button class="mini" id="cloudGo">▶ 探测云工具链</button><div id="cloudOut" style="margin-top:10px"></div>';
