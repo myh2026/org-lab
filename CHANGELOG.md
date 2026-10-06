@@ -154,6 +154,15 @@
 - **实弹**：run2 歌曲原稿 vs 琵琶行 → 擦边（近逐字 1 ·「曲终收拨当心画」）；位置：
   为 F3 验收链（工厂/验收调用点）铺路。
 
+## v0.5.47（2026-10-06）—— 任务孤儿治理（B-43：D5 清理 + 失败通知）
+
+- **背景**（长程任务实测 r79）：executor 进程死亡后，嵌套 `bun … run` 子进程成为孤儿
+  并**继续写工作区**（幽灵写手：17:04 mint-out 实证）；且 orphan_failed 不产生通知。
+- **修复**：① `RunHandle.pid` 外露 + 任务记录 `child_pid`；② 孤儿收割先 **SIGKILL 记录
+  pid + `pkill -9 -P` 横扫直接子代**（journal: `orphan_child_killed`）；③ 两条孤儿路径
+  （harvested / orphan_failed）补齐 `notifyIfEnabled`（完成/失败通知）。
+- **回归**：tests/tasks **20/20**（含 80s SIGSTOP/SIGCONT 全链用例不受影响）。
+
 # CHANGELOG
 
 ## v0.5.35（2026-10-03）—— 长程任务机制实测 + CLI 优先级面修复（B-37）

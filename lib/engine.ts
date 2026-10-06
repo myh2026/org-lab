@@ -102,6 +102,8 @@ export interface RunHandle {
   /** 恢复被暂停的子进程（SIGCONT）。 */
   resume(): Promise<boolean>;
   wait(): Promise<RunResult>;
+  /** v0.5.47（D5）：子进程 pid —— 任务执行器孤儿清理用（inproc 车道无 pid）。 */
+  pid?: number;
 }
 
 // ---------- Bun.spawn 最小面（避免依赖 ambient bun 类型） ----------
@@ -1862,6 +1864,8 @@ export function startRun(opts: RunOptions): RunHandle {
     // v0.5.2：暂停/恢复运行中的 run（spawn 车道 SIGSTOP/SIGCONT —— 长程
     // 任务队列的核心原语）。进程内车道不支持（返回 false，调用方降级为
     // 状态级暂停）。已结束/已取消返回 false。
+    // v0.5.47（D5）：子进程 pid 外露（孤儿清理用；inproc 车道无 proc → undefined）
+    pid: proc ? proc.pid : undefined,
     pause: async (): Promise<boolean> => {
       if (!proc || result !== null) return false;
       // Windows 无 POSIX 信号（kill("SIGSTOP") 抛错 → 如实 false；调用方

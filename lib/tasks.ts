@@ -32,6 +32,7 @@ import * as fs from "./fssafe-fs.ts"; // fs 垫片（删除入口带降级链；
 import * as path from "node:path";
 import { startRun, type RunHandle, type RunResult, ensureWorkspace } from "./engine.ts";
 import { notifyEvent, type NotifyKind } from "./notify.ts";
+import { spawnSync } from "node:child_process"; // v0.5.47（D5）：孤儿子进程横扫（pkill -P）
 
 export type TaskKind = "run" | "ask";
 export type TaskStatus = "queued" | "running" | "paused" | "done" | "failed" | "cancelled";
@@ -66,6 +67,9 @@ export interface TaskRecord {
   /** 进程内车道无法 SIGSTOP —— 状态级暂停的如实标注。 */
   paused_inproc?: boolean;
   pid?: number;
+  /** v0.5.47（D5）：嵌套 run 子进程 pid —— executor 死亡后其可能仍存活写工作区，
+   *  孤儿收割时据此清理（幽灵写手防线）。 */
+  child_pid?: number;
 }
 
 const TASKS_DIR = "runtime/tasks";
@@ -450,6 +454,9 @@ export class TaskRunner {
       session: t.kind === "ask" ? (t.spec.session ?? "task") : undefined,
       approval: t.spec.approval,
     });
+    // v0.5.47（D5）：记录子进程 pid（孤儿清理钥匙）
+    t.child_pid = handle.pid;
+    writeTask(this.ws, t);
     this.slots.set(t.id, { handle, task: t, paused: false });
     // 异步收割（不阻塞 tick）
     void handle.wait().then((r) => {
@@ -465,6 +472,7 @@ export class TaskRunner {
     cur.run_dir = outDir;
     cur.finished_at = new Date().toISOString();
     cur.pid = undefined;
+    cur.child_pid = undefined;
     if (r.ok) {
       cur.status = "done";
       cur.result = { ok: true, elapsed_ms: r.elapsed_ms, summary: summarize(this.ws, r, t) };
@@ -488,6 +496,9 @@ export class TaskRunner {
     for (const t of listTasks(this.ws, { status: "running" })) {
       if (this.slots.has(t.id)) continue;
       if (t.pid !== undefined && isPidAlive(t.pid)) continue; // 有执行者在（活 pid 不动）
+      // v0.5.47（D5）：executor 已死 —— 嵌套子进程可能是仍活着的幽灵写手，
+      // 先按进程组清理再落状态（r79 实测：父死后子进程继续写工作区 3 分钟）。
+      killOrphanChild(this.ws, t.id, t);
       // 判断是否真的死了：run_dir 的 run.json 已收尾 → 按 run.json 判定
       const runJson = readRunJsonSafe(t.run_dir);
       if (runJson) {
@@ -499,6 +510,7 @@ export class TaskRunner {
         cur.result = { ok: runJson.ok, elapsed_ms: runJson.elapsed_ms ?? 0, summary: summarize(this.ws, { ok: runJson.ok, elapsed_ms: runJson.elapsed_ms ?? 0 } as RunResult, cur) };
         writeTask(this.ws, cur);
         journal(this.ws, t.id, "orphan_harvested", `执行器重启后收割 → ${cur.status}`);
+        notifyIfEnabled(this.ws, cur, cur.status === "done" ? "task_done" : "task_failed");
       } else {
         // 无 run.json：产物未收尾 → 标记 failed（可 retry）
         const cur = readTask(this.ws, t.id);
@@ -508,6 +520,7 @@ export class TaskRunner {
         cur.finished_at = new Date().toISOString();
         writeTask(this.ws, cur);
         journal(this.ws, t.id, "orphan_failed", "执行器中断且产物未收尾");
+        notifyIfEnabled(this.ws, cur, "task_failed");
       }
     }
   }
@@ -559,6 +572,25 @@ function isPidAlive(pid?: number): boolean {
   } catch (e) {
     return (e as NodeJS.ErrnoException).code === "EPERM"; // 存在但无权限
   }
+}
+
+/** v0.5.47（D5）：孤儿收割的子进程清理 —— SIGKILL 记录 pid + 横扫其直接子代。
+ * 背景：executor 进程死亡后，嵌套 `bun … run` 子进程成为孤儿并继续写工作区
+ * （r79 实测 17:04 mint-out 幽灵写入）。清理失败不炸收割（尽力而为）。 */
+function killOrphanChild(ws: string, id: string, t: TaskRecord): void {
+  const pid = t.child_pid;
+  if (pid === undefined || !isPidAlive(pid)) return;
+  let killed = false;
+  try {
+    process.kill(pid, "SIGKILL");
+    killed = true;
+  } catch { /* 已死/无权限：不炸 */ }
+  try {
+    // 直接子代横扫（bun 多层进程树的常见形态；pkill 缺席时静默跳过）
+    const p = spawnSync("pkill", ["-9", "-P", String(pid)], { stdio: "ignore" });
+    void p;
+  } catch { /* pkill 缺席：忽略 */ }
+  journal(ws, id, "orphan_child_killed", `清理孤儿子进程 pid=${pid}${killed ? "" : "（SIGKILL 未生效，或已自退）"}`);
 }
 
 // ---- 单发模式（无守护进程时的优雅降级） ---------------------------------------
