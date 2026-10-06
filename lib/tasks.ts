@@ -454,10 +454,20 @@ export class TaskRunner {
       session: t.kind === "ask" ? (t.spec.session ?? "task") : undefined,
       approval: t.spec.approval,
     });
-    // v0.5.47（D5）：记录子进程 pid（孤儿清理钥匙）
-    t.child_pid = handle.pid;
-    writeTask(this.ws, t);
     this.slots.set(t.id, { handle, task: t, paused: false });
+    // v0.5.47（D5 · 实测二修）：proc 在 startRun 的异步车道内才诞生 —— 同步读
+    // 永远太早。启动后短轮询（≤6s）待 pid 出现 → 回写记录（孤儿清理钥匙）。
+    void (async () => {
+      for (let i = 0; i < 12 && handle.pid === undefined; i++) {
+        await new Promise<void>((res) => setTimeout(res, 500));
+      }
+      if (handle.pid === undefined) return;
+      const cur = readTask(this.ws, t.id);
+      if (cur && cur.status === "running" && cur.child_pid === undefined) {
+        cur.child_pid = handle.pid;
+        writeTask(this.ws, cur);
+      }
+    })();
     // 异步收割（不阻塞 tick）
     void handle.wait().then((r) => {
       this.slots.delete(t.id);

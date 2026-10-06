@@ -1865,7 +1865,9 @@ export function startRun(opts: RunOptions): RunHandle {
     // 任务队列的核心原语）。进程内车道不支持（返回 false，调用方降级为
     // 状态级暂停）。已结束/已取消返回 false。
     // v0.5.47（D5）：子进程 pid 外露（孤儿清理用；inproc 车道无 proc → undefined）
-    pid: proc ? proc.pid : undefined,
+    // v0.5.47（D5 · 实测修正）：必须用 getter —— proc 在异步 main() 内才被
+    // 赋值，字面量求值时为 null；冻结值会永远 undefined（首版踩坑）。
+    get pid() { return proc ? proc.pid : undefined; },
     pause: async (): Promise<boolean> => {
       if (!proc || result !== null) return false;
       // Windows 无 POSIX 信号（kill("SIGSTOP") 抛错 → 如实 false；调用方

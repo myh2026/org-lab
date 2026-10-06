@@ -21,6 +21,12 @@
 - **验证**：tests/tasks 20/20；节点级实弹（下一步：造一个孤儿场景复验清理日志）。
 - **教训**：跨进程回收只清「状态」不够——**子进程的生命周期也要被治理**。
 
+### B-43 附：实测复验（同日 · 实弹闭环）
+- 实弹：真实任务在跑（child_pid=39 已录）→ `kill -9` executor → 子进程孤儿存活（幽灵在位）→
+  重启 → journal 落 `orphan_child_killed pid=39` → 子进程确认死亡 → `orphan_failed` + task_failed 通知 ×3。
+- **二修**（实弹驱动）：① `pid` 必须为 **getter**（proc 在异步车道内诞生，冻结值恒 undefined）；
+  ② tasks 侧启动后**短轮询（≤6s）回填** child_pid（同步读永远太早）。两条均已实弹验证。
+
 # BUGFIXES — ORG 开发过程中发现并修复的 HSL 工具链问题
 
 > 开发 ORG 的过程同时是对 HSL（dhv-ts 参考解释器）的一次实测。以下按严重度排序，
