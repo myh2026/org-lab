@@ -318,6 +318,11 @@ select.chip option { background:var(--bg2); color:var(--tx); }
     </div>
     <div class="sec" id="secTasks">
       <div class="shead">任务队列 <span class="cnt" id="cntTasks"></span></div>
+      <div style="padding:0 8px 4px"><input id="taskNew" class="toolf" placeholder="新任务（回车提交到队列）…" autocomplete="off"></div>
+      <div style="padding:0 8px 6px; display:flex; gap:6px; align-items:center">
+        <input id="taskPrio" class="toolf" type="number" min="0" max="10" value="5" title="优先级 0-10" style="max-width:70px">
+        <button class="mini" id="taskGo">▶ 提交任务</button>
+      </div>
       <div class="slist" id="lstTasks"></div>
     </div>
   </aside>
@@ -714,11 +719,53 @@ function renderTasks() {
     list.forEach(function (t) {
       var b = document.createElement("div");
       b.className = "sitem";
-      b.innerHTML = esc(short(t.goal || t.id || "?", 44)) + '<span class="bdg">' + esc(t.state || "") + "</span>";
+      var st = t.status || t.state || "";
+      var goal = (t.spec && t.spec.task) || t.goal || t.id || "?";
+      var acts = [];
+      if (st === "running") { acts = [["pause", "⏸"], ["cancel", "✕"]]; }
+      else if (st === "paused") { acts = [["resume", "▶"], ["cancel", "✕"]]; }
+      else if (st === "queued") { acts = [["cancel", "✕"]]; }
+      else if (st === "failed" || st === "cancelled") { acts = [["retry", "↻"]]; }
+      var btns = "";
+      acts.forEach(function (a) {
+        btns += '<button class="mini" data-tid="' + esc(String(t.id)) + '" data-act="' + a[0] + '" title="' + a[0] + '">' + a[1] + "</button>";
+      });
+      b.innerHTML = '<span class="stools">' + btns + '</span><span class="bdg">' + esc(st) +
+        (t.priority != null && t.priority !== 5 ? " ·P" + t.priority : "") + "</span>" +
+        esc(short(goal, 40));
+      var bts = b.querySelectorAll("button[data-act]");
+      for (var i = 0; i < bts.length; i++) {
+        bts[i].onclick = (function (btn) {
+          return function (ev) {
+            ev.stopPropagation();
+            taskAction(btn.getAttribute("data-tid"), btn.getAttribute("data-act"), btn);
+          };
+        })(bts[i]);
+      }
       el.appendChild(b);
     });
-    if (!list.length) el.innerHTML = '<div class="sempty">任务队列为空</div>';
+    if (!list.length) el.innerHTML = '<div class="sempty">任务队列为空 —— 上方输入新任务提交</div>';
   });
+}
+function taskAction(id, action, btn) {
+  if (btn) { btn.textContent = "…"; }
+  apiSend("POST", "/api/task/" + encodeURIComponent(id), { action: action }).then(function (r) {
+    if (r && r.ok === false) { hint("操作失败：" + (r.error || "?")); }
+    else { hint("已 " + action + " · " + id); }
+    renderTasks();
+  }).catch(function () { hint("操作失败（网络）"); renderTasks(); });
+}
+function submitTaskNow() {
+  var text = $("taskNew").value.trim();
+  if (!text) { hint("先输入任务内容"); return; }
+  var prio = Number($("taskPrio").value);
+  api("/api/task/submit", { kind: "run", task: text, priority: (isNaN(prio) ? 5 : prio), model: state.model })
+    .then(function (r) {
+      if (!r || r.ok === false) { hint("提交失败：" + ((r && r.error) || "?")); return; }
+      $("taskNew").value = "";
+      hint("已提交 " + ((r.task && r.task.id) || "") + "（队列）");
+      renderTasks();
+    }).catch(function () { hint("提交失败（网络）"); });
 }
 
 /* ---- statusbar ---- */
@@ -1964,6 +2011,8 @@ $("rbAbout").onclick = function () { showAbout(); };
 $("rbTools").onclick = function () { railTap("tools"); };
 $("dwClose").onclick = closeDrawer;
 $("toolFilter").addEventListener("input", renderTools);
+$("taskGo").onclick = submitTaskNow;
+$("taskNew").addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); submitTaskNow(); } });
 $("newAsk").onclick = function () { state.currentSession = null; renderSessions(); crumb(); clearStream(); renderEmpty(); hint("新会话"); };
 $("chipMode").onclick = function () {
   state.mode = state.mode === "team" ? "direct" : "team";
@@ -2000,7 +2049,7 @@ renderTools();
 refreshApprovals();
 setInterval(refreshApprovals, 5000);
 setInterval(renderSb, 10000);
-setInterval(function () { if (!state.running) loadStatus(); }, 15000);
+setInterval(function () { if (!state.running) loadStatus(); if (state.sec === "tasks") renderTasks(); }, 15000);
 </script>
 </body>
 </html>`;

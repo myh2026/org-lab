@@ -15,7 +15,7 @@ describe("UI v5 骨架冒烟（ORG_WEB_UI=v5 轨）", () => {
       "newAsk", "lstExp", "lstSes", "lstRuns", "lstTasks",
       "chipMode", "chipLane", "chipAppr", "inp", 'id="send"', 'id="stop"',
       "sbCtx", "sbTok", "sbLane", "sbState", 'id="appr"', "streamCol",
-      "rbTools", "secTools", "lstTools", "toolFilter", 'id="drawer"', "dwBody", "dwClose",
+      "rbTools", "secTools", "lstTools", "toolFilter", "taskNew", "taskGo", 'id="drawer"', "dwBody", "dwClose",
     ];
     const miss = anchors.filter((k) => !page.includes(k));
     if (miss.length) console.error("缺失锚点:", miss.join(", "));
@@ -29,7 +29,7 @@ describe("UI v5 骨架冒烟（ORG_WEB_UI=v5 轨）", () => {
       "function renderSessions", "function renameSession", "function deleteSession",
       "function refreshApprovals", "function renderSb", "function replayRun",
       "function renderTools", "function openDrawer", "function closeDrawer",
-      "function scanPanel", "function symbolsPanel", "function sbomPanel", "function dbPanel", "function diffPanel", "function pdfPanel", "function mcpPanel", "function sastPanel", "function iacPanel", "function gitPanel", "function depsPanel", "function debugPanel", "function cloudPanel", "function retestPanel", "function spawnsPanel", "function reviewPanel", "function trackerPanel", "function providersPanel", "function audioPanel", "function searchPanel", "function memoryPanel", "function schedPanel", "function notifyPanel", "function collabPanel", "function visionPanel", "function voicePanel", "function mobilePanel", "function remotePanel",
+      "function scanPanel", "function symbolsPanel", "function sbomPanel", "function dbPanel", "function diffPanel", "function pdfPanel", "function mcpPanel", "function sastPanel", "function iacPanel", "function gitPanel", "function depsPanel", "function debugPanel", "function cloudPanel", "function retestPanel", "function spawnsPanel", "function reviewPanel", "function trackerPanel", "function providersPanel", "function audioPanel", "function searchPanel", "function memoryPanel", "function submitTaskNow", "function taskAction", "function schedPanel", "function notifyPanel", "function collabPanel", "function visionPanel", "function voicePanel", "function mobilePanel", "function remotePanel",
     ];
     const miss = fns.filter((k) => !page.includes(k));
     if (miss.length) console.error("缺失函数:", miss.join(", "));
