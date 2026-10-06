@@ -195,6 +195,8 @@ button.mini:hover { color:var(--tx); background:var(--bg3); }
 .dw-form select { background:var(--bg2); border:1px solid var(--ln2); border-radius:var(--r2);
   padding:6px 8px; color:var(--tx); font:var(--fs-sm) var(--mono); }
 .dw-form label { color:var(--tx3); font-size:var(--fs-xs); display:inline-flex; align-items:center; gap:3px; }
+.dw-form input[type="file"] { flex:1; color:var(--tx3); font:var(--fs-sm) var(--sans); }
+#dwBody audio { width:100%; margin-top:8px; border-radius:var(--r2); }
 .hit a { color:var(--ac); text-decoration:none; }
 .hit a:hover { text-decoration:underline; }
 .sitem .stools { float:right; margin-left:4px; }
@@ -913,6 +915,8 @@ var TOOLS = [
   { id: "sched", name: "定时任务", sub: "listSchedules/previewNext —— 计划清单 + cron 预览", run: "schedPanel" },
   { id: "notify", name: "通知中心", sub: "readNotifications —— 未读/全量 + 一键已读", run: "notifyPanel" },
   { id: "collab", name: "协作空间", sub: "collabSummary/threads/feed —— 多人协作线程与动态", run: "collabPanel" },
+  { id: "vision", name: "视觉分析", sub: "analyzeImages —— 选图 → 描述/问答（VLM）", run: "visionPanel" },
+  { id: "voice", name: "语音工坊", sub: "transcribeAudio / synthesizeSpeech —— 转写 + 朗读", run: "voicePanel" },
 ];
 function renderTools() {
   var el = $("lstTools"); el.innerHTML = "";
@@ -1571,6 +1575,86 @@ function collabPanel() {
     if (a) go(a);
   });
   go("summary");
+}
+function visionPanel() {
+  $("dwBody").innerHTML = '<div class="dw-form"><input id="vsFile" type="file" accept="image/*"><button id="vsGo">分析</button></div>' +
+    '<div class="dw-form"><input id="vsPrompt" placeholder="提问（可选，如：描述这张图 / 图里有什么）" autocomplete="off"></div><div id="vsOut"></div>';
+  function err(e) { $("vsOut").innerHTML = '<div class="dw-meta">失败：' + esc(e) + '</div>'; }
+  $("vsGo").onclick = function () {
+    var f = $("vsFile").files && $("vsFile").files[0];
+    if (!f) { err("先选择一张图片（相册/Files）"); return; }
+    $("vsOut").innerHTML = '<div class="dw-meta">读图中…</div>';
+    var rd = new FileReader();
+    rd.onload = function () {
+      var b64 = String(rd.result).replace(/^data:[^,]*,/, "");
+      $("vsOut").innerHTML = '<div class="dw-meta">分析中…（VLM）</div>';
+      api("/api/vision", { image_base64: b64, mime: f.type || undefined, prompt: $("vsPrompt").value.trim() || undefined })
+        .then(function (j) {
+          if (!j || j.ok === false) { err((j && j.error) || "?（可能未配置视觉服务凭据）"); return; }
+          var h = '<div class="dw-meta">' + (j.chars || 0) + " 字符 · " + (j.images || 1) + ' 图</div>' +
+            '<pre class="dw-pre">' + esc(String(j.text || "").slice(0, 8000)) + '</pre>';
+          $("vsOut").innerHTML = h;
+        }).catch(function (e) { err(String(e)); });
+    };
+    rd.onerror = function () { err("读取文件失败"); };
+    rd.readAsDataURL(f);
+  };
+}
+function voicePanel() {
+  $("dwBody").innerHTML = '<div class="dw-form" id="vcTabs"><button data-a="asr" class="on">录音转写</button><button data-a="tts">朗读合成</button></div><div id="vcOut"></div>';
+  var out = $("vcOut");
+  function err(e) { out.innerHTML = '<div class="dw-meta">失败：' + esc(e) + '</div>'; }
+  function tab(a) {
+    var ts = document.querySelectorAll("#vcTabs button");
+    for (var i = 0; i < ts.length; i++) { ts[i].className = ts[i].getAttribute("data-a") === a ? "on" : ""; }
+  }
+  function asrView() {
+    tab("asr");
+    out.innerHTML = '<div class="dw-form"><input id="vcFile" type="file" accept="audio/*"><button id="vcGo">转写</button></div><div id="vcAsrOut"></div>';
+    $("vcGo").onclick = function () {
+      var f = $("vcFile").files && $("vcFile").files[0];
+      if (!f) { $("vcAsrOut").innerHTML = '<div class="dw-meta">先选择音频文件</div>'; return; }
+      $("vcAsrOut").innerHTML = '<div class="dw-meta">上传转写中…（ASR）</div>';
+      var rd = new FileReader();
+      rd.onload = function () {
+        api("/api/asr", { audio_base64: rd.result }).then(function (j) {
+          if (!j || j.ok === false) { $("vcAsrOut").innerHTML = '<div class="dw-meta">失败：' + esc((j && j.error) || "?（可能未配置语音服务凭据）") + '</div>'; return; }
+          $("vcAsrOut").innerHTML = '<div class="dw-meta">' + (j.chars || 0) + ' 字符</div><pre class="dw-pre">' + esc(String(j.text || "")) + '</pre>';
+        }).catch(function (e) { $("vcAsrOut").innerHTML = '<div class="dw-meta">失败：' + esc(String(e)) + '</div>'; });
+      };
+      rd.readAsDataURL(f);
+    };
+  }
+  function ttsView() {
+    tab("tts");
+    out.innerHTML = '<textarea class="dw-ta" id="ttsText" placeholder="要朗读的文本（≤8192 字）"></textarea>' +
+      '<div class="dw-form"><button id="ttsGo">合成朗读</button></div><div id="ttsOut"></div>';
+    $("ttsGo").onclick = function () {
+      var text = $("ttsText").value.trim();
+      if (!text) { $("ttsOut").innerHTML = '<div class="dw-meta">先输入文本</div>'; return; }
+      $("ttsOut").innerHTML = '<div class="dw-meta">合成中…（TTS）</div>';
+      fetch("/api/tts", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: text }) })
+        .then(function (r) {
+          if (!r.ok) {
+            return r.json().then(function (j) { $("ttsOut").innerHTML = '<div class="dw-meta">失败：' + esc((j && j.error) || ("HTTP " + r.status)) + '</div>'; },
+              function () { $("ttsOut").innerHTML = '<div class="dw-meta">失败：HTTP ' + r.status + '</div>'; });
+          }
+          return r.blob().then(function (b) {
+            var url = URL.createObjectURL(b);
+            $("ttsOut").innerHTML = '<div class="dw-meta">合成完成 ✓ （' + Math.round(b.size / 1024) + 'KB）</div>';
+            var au = document.createElement("audio");
+            au.controls = true; au.src = url;
+            $("ttsOut").appendChild(au);
+          });
+        }).catch(function (e) { $("ttsOut").innerHTML = '<div class="dw-meta">失败：' + esc(String(e)) + '</div>'; });
+    };
+  }
+  $("vcTabs").addEventListener("click", function (ev) {
+    var a = ev.target && ev.target.getAttribute ? ev.target.getAttribute("data-a") : null;
+    if (a === "asr") asrView();
+    if (a === "tts") ttsView();
+  });
+  asrView();
 }
 function cloudPanel() {
   $("dwBody").innerHTML = '<button class="mini" id="cloudGo">▶ 探测云工具链</button><div id="cloudOut" style="margin-top:10px"></div>';
