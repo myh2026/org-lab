@@ -969,6 +969,7 @@ var TOOLS = [
   { id: "plugins", name: "插件", sub: "pluginList —— .org/plugins 清单（只读面）", run: "pluginsPanel" },
   { id: "rbac", name: "RBAC", sub: "loadRbac —— 角色与动作矩阵（只读面）", run: "rbacPanel" },
   { id: "engines", name: "浏览器引擎", sub: "browserEngines —— agent-browser/chromium/chrome 探测", run: "enginesPanel" },
+  { id: "snapshot", name: "网页快照", sub: "browserSnapshot —— 输入 URL → 标题/正文/链接（真浏览器）", run: "snapshotPanel" },
 ];
 function renderTools() {
   var el = $("lstTools"); el.innerHTML = "";
@@ -1860,6 +1861,38 @@ function enginesPanel() {
       $("enOut").innerHTML = h;
     }).catch(function (e) { err(String(e)); });
   };
+}
+function snapshotPanel() {
+  $("dwBody").innerHTML = '<div class="dw-form"><input id="snUrl" placeholder="https://… （网页 URL）" autocomplete="off"><button id="snGo">抓取快照</button></div><div id="snOut"></div>';
+  function err(e, hint) {
+    $("snOut").innerHTML = '<div class="dw-meta">失败：' + esc(e) + '</div>' +
+      (hint ? '<div class="dw-meta">' + esc(String(hint).slice(0, 220)) + '</div>' : "");
+  }
+  function go() {
+    var url = $("snUrl").value.trim();
+    if (!u7(url)) { err("先输入 http/https URL"); return; }
+    $("snOut").innerHTML = '<div class="dw-meta">抓取中…（真浏览器快照）</div>';
+    api("/api/govex/browser-snapshot", { url: url }).then(function (j) {
+      if (!j || j.ok === false) { err((j && j.error) || "?", j && j.hint); return; }
+      var h = '<div class="dw-meta">' + esc(j.engine || "?") + " · " + (j.ms || 0) + "ms" +
+        (j.title ? " · 《" + esc(String(j.title).slice(0, 60)) + "》" : "") + '</div>';
+      if (j.final_url && j.final_url !== j.url) h += '<div class="dw-meta">→ ' + esc(String(j.final_url).slice(0, 90)) + '</div>';
+      if ((j.links || []).length) {
+        h += '<div class="dw-meta">链接 ' + (j.links.length || 0) + '（前 8）：</div>';
+        (j.links || []).slice(0, 8).forEach(function (l) {
+          var href = (typeof l === "string") ? l : (l.href || l.url || "");
+          var txt = (typeof l === "string") ? l : (l.text || l.href || "");
+          h += '<div class="hit">🔗 <a href="' + esc(String(href)) + '" target="_blank" rel="noopener">' + esc(String(txt).slice(0, 70)) + '</a></div>';
+        });
+      }
+      h += '<pre class="dw-pre">' + esc(String(j.text || "").slice(0, 16000)) + '</pre>';
+      $("snOut").innerHTML = h;
+    }).catch(function (e) { err(String(e)); });
+  }
+  function u7(u) { return u.indexOf("http://") === 0 || u.indexOf("https://") === 0; }
+  $("snGo").onclick = go;
+  $("snUrl").addEventListener("keydown", function (e) { if (e.key === "Enter") go(); });
+  $("snUrl").focus();
 }
 function cloudPanel() {
   $("dwBody").innerHTML = '<button class="mini" id="cloudGo">▶ 探测云工具链</button><div id="cloudOut" style="margin-top:10px"></div>';
